@@ -28,3 +28,4 @@ JS中的数据类型：
 >
 > **只能通过Object.getOwnPropertySymbols获取对象中的Symbol**
 
+
