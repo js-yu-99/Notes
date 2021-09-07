@@ -48,3 +48,91 @@
 >
 > 底层检测类型是按照值存储的二进制进行检测的。对象是 000 开头的，所有null（000000）被检测为**object**
 
+### 数据类型转换
+
++ 把原始值转为对象：Object(value)
++ 把其他类型转为数字
+  + Number(value) （隐式转换）
+    + 数学运算、isNaN、==比较
+    + 字符串 -> 数字：空字符串转为0、字符串只要出现非数字就会转为NaN
+    + 布尔 -> 数字：true变为1，false变为0
+    + null -> 0
+    + Undefined -> NaN
+    + Symbol -> 报错
+    + BigInt -> 去掉n后缀
+    + 对象 -> 数字：(Symbol.toPrimitive > valueOf > toString)  -> Number
+  + parseInt/parseFloat(value)（手动转换）
+    + 首先把value变为字符串，从字符串左侧第一个字符开始查找，直到找到一个非有效数字的位置为止。把找到的结果转换为数字，一个都没找到返回NaN。
++ 把其他类型转为字符串
+  + 原始值转换直接用引号包起来
+  + toString()
+  + 字符串/模板字符串 通过加号拼接（+）
++ 把其他类型转为布尔值
+  + 只有**0、NaN、null、undefined、空字符串**会转换为false，其他都是true
+  + Boolean(value)、!!value、条件判断、逻辑表达式
+
+```js
+console.log(!![]); // true
+console.log(!!-1); // true
+console.log(1 + '1'); // '11'
+let n = '10';
+console.log({} + n); // 10 运行时将左侧{} 当成是代码块，不参与运算
+console.log(n + {}); // '10[object Object]' 字符串拼接
+
+let obj1 = {
+  [Symbol.toPrimitive]: function (hint) {
+    console.log(hint); // 表示要转换到的原始值的预期类型 'default' | 'string' | 'number'
+    return this.x;
+  },
+  x: 10,
+  valueOf: function () {
+    return 20;
+  }
+}
+console.log(10 + obj1); // 20  Symbol.toPrimitive > valueOf > toString
+let obj2 = {
+  [Symbol.toPrimitive](hint) {
+    if (hint == "number") {
+      return 10;
+    }
+    if (hint == "string") {
+      return "hello";
+    }
+    return true;
+  }
+};
+console.log(+obj2);     // 10      -- hint 参数值是 "number"
+console.log(`${obj2}`); // "hello" -- hint 参数值是 "string"
+console.log(obj2 + ""); // "true"  -- hint 参数值是 "default"
+
+console.log(Number('10px'), parseInt('10px')); // NaN, 10
+console.log(Number(null), parseInt(null)); // 0, NaN
+let result = 100 + true + 21.2 + null + undefined + 'wang' + [] + null + 9 + false;
+console.log(result); // NaNwangnull9false
+var a = {
+  x: 1,
+  valueOf: function () {
+    return this.x++;
+  }
+}
+if (a == 1 && a == 2 & a==3) {
+  console.log('ok');
+}
+let arr = [27.2, 0, '0013', '14px', 123];
+arr = arr.map(parseInt);
+console.log(arr); // [27, NaN, 1, 1, 27]
+```
+
+> + `i++` 和 `i = i + 1` 以及` i += 1` 三个是否一样？
+>   + `i = i + 1` 和` i+=1`是一样的（数字或者字符串）
+>   + `i++` 一定返回数字
+> + `i++` 和 `++i` 的不同？
+>   + `++i` 先i累加1，累加后再进行运算
+>   + `i++` 先运算，再累加1
+> + 对象隐式转换字符串规则
+>   + 先调用对象的Symbol.toPrimitive 属性值，如果没有
+>   + 再调用对象的valueOf()获取原始值，如果不是原始值
+>   + 再去调用对象的 toString转换为字符串
+>
+> **Symbol.toPrimitive** 是一个内置的 Symbol 值，它是作为对象的函数值属性存在的，当一个对象转换为对应的原始值时，会调用此函数。 --MDN
+
