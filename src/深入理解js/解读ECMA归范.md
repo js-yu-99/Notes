@@ -241,6 +241,98 @@ var a = {n: 1};
 var b = a;
 a.x = a = {n: 2};
 console.log(a.x); // undefined
-console.log(b); // {n: 1, x: {n: 2}}  成员访问优先级高
+console.log(b); // {n: 1, x: {n: 2}}  成员访问优先级比=赋值高
+```
+
+
+
+***创建函数***
+
++ 开辟一个堆内存空间，有一个16进制的地址
++ 存储的内容：函数体中的代码当做字符串先存储起来。
++ 创建函数时，声明了其作用域[[scope]] （创建函数所在的上下文）
++ 堆内存地址放在栈中，供函数名（变量）调用
+
+***函数执行***
+
++ 形成一个私有的执行上下午`EC(fn)`，创建`AO（Active Object）` 函数中的变量对象
++ 初始化作用域链SCOPE-CHAIN：<EC(fn), EC(G)> 左侧是自己的私有上下文，右侧是创建函数的作用域
++ 初始化this指向
++ 初始化arguments（实参集合）
++ 形参赋值（形参是私有变量）
++ 变量提升
++ 代码执行
++ 根据情况，决定当前形成的私有上下文是否会出站释放
++ 函数再次执行，所有的操作重新走一遍，函数每一次执行没有直接关系
+
+```js
+var x = [12, 23];
+function fn(y) {
+	y[0] = 100;
+	y = [100];
+	y[1] = 200;
+	console.log(y); // [100, 200]
+}
+fn(x);
+console.log(x); // [100, 23]
+```
+
+```js
+/**
+EC(G)
+	VO(G)
+		i = 0;
+		A = 0X000 [A函数 [[scope]]: EC(G)] // SCOPE-CHAIN
+		y = 0x001
+		B = 0x003 [B函数 [[scope]]:EC(G)]
+*/
+var i = 0;
+function A() {
+  /**
+  	EC(A)
+  		AO(A)
+  			i = 10
+  			x = 0x001 [x函数 [[scope]]:EC(A)]
+  		作用域链：<EC(A), EC(G)>
+  */
+	var i = 10;
+	function x() {
+    /**
+    	EC(x)
+    		AO(x)
+    		作用域链：<EC(x), EC(A)> 函数执行的上级上下文是创建它的作用域【只和在哪创建有关系，和在哪执行没有关系】
+    */
+		console.log(i); // 获取其上级上下文 EC(A) 中的 i
+	}
+  return x; // return 0x001;
+}
+var y = A();
+y();
+function B() {
+  /**
+  	EC(B)
+  		AO(B)
+  			i = 20
+  		作用域链：<EC(B), EC(G)>
+  */
+  var i = 20;
+  y();
+}
+B();
+```
+
+```js
+let x = 5;
+function fn(x) {
+  return function (y) {
+    console.log(y + (++x));
+  }
+}
+let f = fn(6);
+f(7);
+fn(8)(9);
+f(10);
+console.log(x);
+// 14 18 18 5
 ```
 
