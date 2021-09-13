@@ -369,3 +369,59 @@ A(1); // 1
 A(2); // 4
 ```
 
+# 变量提升
+
+**预解析**：在**`当前上下文`**代码自上而下执行之前，浏览器会把所有带 **`var`** 和 **`function`** 关键字的进行提前的声明或定义
+
++ 带var的只是提前声明
+
++ 带function的是提前声明+赋值（定义）
+
+```js
+/**
+	EC(G)
+		变量提升：
+			var a;
+			fn1 = 0x000; [[scope]]:EC(G)
+			var fn2;
+			
+			a = 10;
+			fn2 = 0x001; [[scope]]:EC(G)
+*/
+console.log(a); // undefined
+fn1(); // 'fn1'
+var a = 10;
+function fn1() { // 函数声明
+  /**
+  	EC(FN1)
+  		作用域链： <EC(FN1), EC(G)>
+  		形参赋值：--
+  		变量提升：
+  			var a;
+  			a = 20;
+  */
+	console.log('fn1'); // 'fn1'
+  console.log(a); // undefined
+  var a = 20;
+  console.log(a); // 20;
+}
+fn2(); // fn2 is not a function
+var fn2 = function () { // 函数表达式
+  console.log('fn2');
+}
+fn2();
+// 项目中推荐使用函数表达式的方式创建函数，可以规范函数执行的顺序
+var fn = function sum() {
+  console.log('sum');
+  console.log(sum);
+}
+// 匿名函数具名化，设置的函数名不能在函数以外使用（并没有在当前上下文中声明这个变量）
+// 具名化的名字可以在函数内部的上下文中使用，代表函数本身；默认情况下，其值是不能被修改的；但是可重新声明同名变量，当做私有变量处理
+
+// 老版本浏览器会不管判断直接对函数提升赋值
+// 新版本浏览器对于判断体中的函数只声明 不定义
+if (1 === 1) {
+  function foo() {}
+}
+```
+
