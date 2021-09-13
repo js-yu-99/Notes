@@ -425,3 +425,99 @@ if (1 === 1) {
 }
 ```
 
+
+
+# let/const/var 的区别
+
+`let`和`const`都是声明变量，只不过`const`不允许重定向变量的指针，不能重新赋值
+
+```js
+let x = 10;
+x = 20;
+const y = 10;
+y = 20; // Uncaught TypeError: Assignment to constant variable. （variable =》变量）
+```
+
+### var VS let
+
++ let不存在变量提升
+
+```js
+console.log(x); // Uncaught ReferenceError: Cannot access 'x' before initialization
+// 无法在初始化之前访问'x'
+let x = 10;
+```
+
+**词法解析（AST）**：基于HTTP从服务器拉取回来的JS代码是一段字符串，浏览器首先会按照ECMAScript规则，把字符串变为C++可以识别和解析的一套树结构对象，***所以let一个变量前访问这个变量，词法解析已经知道这个变量会被声明，所以会提示`Cannot access 'x' before initialization` 而不是 `x is not defined`***
+
++ let不允许重复声明（不论基于什么方式）
+
+  词法解析阶段报的错误，所有代码不会被执行
+
+  ```js
+  console.log(1); // 不执行
+  var x = 20;
+  console.log(x); // Uncaught SyntaxError: Identifier 'x' has already been declared
+  let x = 10;
+  ```
+
++ 全局上下文中基于var声明的变量，新版浏览器中不是存放到VO(G)中的，而是直接放到了GO(window)中，基于let声明的变量是存放到VO(G)中的。
+
+  + **全局上下文查找一个变量：**
+  + 1.先去VO(G)中是否存在，如果存在就用这个全局变量；
+  + 2.如果VO(G)中没有，则再次尝试去GO中找，因为js中的某些操作是可以省略window的，如果有就是获取某个属性值；
+  + 3.如果再没有，则直接保存：xxx is not defined
+
++ 暂时性死区问题
+
++ 块级作用域（排除函数和对象的大括号）中出现let/const/function，则当前的{}会成为一个块级私有的上下文
+
+  ```js
+  /**
+  	EC(G)
+  		GO -> x: 10
+  		VO(G) -> y = 20
+  		变量提升：
+  			var x;
+  			x = 10;
+  */
+  var x = 20;
+  let y = 20;
+  if (1 === 1) {
+    /**
+    	EC(BLOCK)
+    		VO(BLOCK) y = 200
+    			作用域链：<EC(BLOCK), EC(G)>
+    			this: 使用其上级上下文的this
+    			变量提升：var不受块级上下文影响
+    */
+  	var x = 100; // 操作全局的x，var中没有块级上下文 window.x = 100;
+  	let y = 200;
+  	console.log(x, y); // 100 200
+  }
+  console.log(x, y); // 100 20
+  ```
+
+  ```js
+  for (var i = 0;i < 5;i++) {
+  	setTimeout(() => {
+      console.log(i); // 5 5 5 5 5 
+    })
+  }
+  for (let j = 0;j < 5;j++) { // 产生6个块级上下文 控制循环的父级块上下文，五次循环产生的五个子级块上下文
+  	setTimeout(() => {
+      console.log(j); // 0 1 2 3 4
+    })
+  }
+  
+  let arr = [10, 20, 30];
+  let i = 0, len = arr.length;
+  for (; i < len; i++) { // 不会产生块级上下文 性能更好
+    console.log(i);
+  }
+  ```
+
+  
+
+# this
+
