@@ -58,6 +58,110 @@ fiber 对应关系
 
 
 
+## State
+
+**state 到底是同步还是异步的？**
+
+### 类组件中的 state
+
+```js
+function batchedEventUpdates(fn,a){
+    /* 开启批量更新  */
+   isBatchingEventUpdates = true;
+  try {
+    /* 这里执行了的事件处理函数， 比如在一次点击事件中触发setState,那么它将在这个函数内执行 */
+    return batchedEventUpdatesImpl(fn, a, b);
+  } finally {
+    /* try 里面 return 不会影响 finally 执行  */
+    /* 完成一次事件，批量更新  */
+    isBatchingEventUpdates = false;
+  }
+}
+```
+
+在 React 事件执行之前通过 isBatchingEventUpdates=true 打开开关，开启事件批量更新，当该事件结束，再通过 isBatchingEventUpdates = false; 关闭开关，然后在 scheduleUpdateOnFiber 中根据这个开关来确定是否进行批量更新。
+
+
+
+```jsx
+export default class index extends React.Component{
+    state = { number:0 }
+    handleClick= () => {
+          this.setState({ number:this.state.number + 1 },()=>{   console.log( 'callback1', this.state.number)  })
+          console.log(this.state.number)
+          this.setState({ number:this.state.number + 1 },()=>{   console.log( 'callback2', this.state.number)  })
+          console.log(this.state.number)
+          this.setState({ number:this.state.number + 1 },()=>{   console.log( 'callback3', this.state.number)  })
+          console.log(this.state.number)
+    }
+    render(){
+        return <div>
+            { this.state.number }
+            <button onClick={ this.handleClick }  >number++</button>
+        </div>
+    }
+} 
+```
+
+点击打印：**0, 0, 0, callback1 1 ,callback2 1 ,callback3 1**
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1632454162174-85bb711f-a414-40f1-9c5f-1aadea17172d.png)
+
+
+
+**为什么异步操作里面的批量更新规则会被打破呢?**
+
+```js
+setTimeout(()=>{
+    this.setState({ number:this.state.number + 1 },()=>{   console.log( 'callback1', this.state.number)  })
+    console.log(this.state.number)
+    this.setState({ number:this.state.number + 1 },()=>{    console.log( 'callback2', this.state.number)  })
+    console.log(this.state.number)
+    this.setState({ number:this.state.number + 1 },()=>{   console.log( 'callback3', this.state.number)  })
+    console.log(this.state.number)
+})
+```
+
+打印 ： **callback1 1 , 1, callback2 2 , 2,callback3 3 , 3** 
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1632454219313-c758a592-c494-4f93-8bca-9d206ec82701.png)
+
+## 
+
+ReactDomFlushSync可以提高某个更新任务的优先级
+
+```js
+handerClick=()=>{
+    setTimeout(()=>{
+        this.setState({ number: 1  })
+    })
+    this.setState({ number: 2  })
+    ReactDOM.flushSync(()=>{
+        this.setState({ number: 3  })
+    })
+    this.setState({ number: 4  })
+}
+render(){
+   console.log(this.state.number) // 3 4 1
+   return ...
+}
+```
+
+- 首先 flushSync this.setState({ number: 3 })设定了一个高优先级的更新，所以 2 和 3 被批量更新到 3 ，所以 3 先被打印。
+- 更新为 4。
+
+- 最后更新 setTimeout 中的 number = 1。
+
+**flushSync补充说明**：flushSync 在同步条件下，会合并之前的 setState | useState，可以理解成，如果发现了 flushSync ，就会先执行更新，如果之前有未更新的 setState ｜ useState ，就会一起合并了，所以就解释了如上，2 和 3 被批量更新到 3 ，所以 3 先被打印。
+
+综上所述， React 同一级别**更新优先级**关系是:
+
+flushSync 中的 setState **>** 正常执行上下文中 setState **>** setTimeout ，Promise 中的 setState。
+
+
+
+
+
 ## diff算法
 
 ### 单节点diff
