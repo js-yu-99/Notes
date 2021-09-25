@@ -158,7 +158,15 @@ render(){
 
 flushSync 中的 setState **>** 正常执行上下文中 setState **>** setTimeout ，Promise 中的 setState。
 
+### 函数组件中的state
 
+useState用法
+
+> [ ①state , ②dispatch ] = useState(③initData)
+
+- ① state，目的提供给 UI ，作为渲染视图的数据源。
+- ② dispatch 改变 state 的函数，可以理解为推动函数组件渲染的渲染函数。
+- ③ initData 有两种情况，第一种情况是非函数，将作为 state 初始化的值。 第二种情况是函数，函数的返回值作为 useState 初始化的值。
 
 
 
