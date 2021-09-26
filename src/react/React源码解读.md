@@ -168,6 +168,56 @@ useState用法
 - ② dispatch 改变 state 的函数，可以理解为推动函数组件渲染的渲染函数。
 - ③ initData 有两种情况，第一种情况是非函数，将作为 state 初始化的值。 第二种情况是函数，函数的返回值作为 useState 初始化的值。
 
+```jsx
+const [ number , setNumber ] = React.useState(()=>{
+       /*  props 中 a = 1 state 为 0-1 随机数 ， a = 2 state 为 1 -10随机数 ， 否则，state 为 1 - 100 随机数   */
+       if(props.a === 1) return Math.random() 
+       if(props.a === 2) return Math.ceil(Math.random() * 10 )
+       return Math.ceil(Math.random() * 100 ) 
+});
+// 等同于
+const [ number , setNumber ] = React.useState(Math.ceil(Math.random() * 100 ));
+```
+
+对于 dispatch的参数,也有两种情况：
+
+- 第一种非函数情况，此时将作为新的值，赋予给 state，作为下一次渲染使用;
+- 第二种是函数的情况，如果 dispatch 的参数为一个函数，这里可以称它为reducer，reducer 参数，是上一次返回最新的 state，返回值作为新的 state。
+
+```jsx
+const [ number , setNumbsr ] = React.useState(0)
+const handleClick=()=>{
+   // 函数使用 变为4 因为每次函数的参数都是最新的state值
+   setNumber((state)=> state + 2)  // state - > 0 + 2 = 2
+   setNumber((state)=> state + 2)  // state - > 2 + 2 = 4
+  
+   // 非函数 最后number 变为2
+   setNumber(number + 2); 
+   setNumber(number + 2);
+  
+   // 组合使用 number变为2 setNumber(number + 2) 因为使用的number 还是0，不是setNumber((state)=> state + 2)返回的最新的值
+   setNumber((state)=> state + 2);
+   setNumber(number + 2);
+   
+}
+```
+
+
+
+## props
+
+### props是什么？
+
+对于在 React 应用中写的子组件，无论是函数组件 `FunComponent`，还是类组件 `ClassComponent` ，父组件绑定在它们标签里的属性/方法，最终会变成 props 传递给它们。但是这也不是绝对的，对于一些特殊的属性，比如说 ref 或者 key ，React 会在底层做一些额外的处理。
+
+### 监听props改变
+
++ 类组件中：`getDerivedStateFromProps`（旧版componentWillReceiveProps）
+
++ 函数组件中：`useEffect`
+
+
+
 
 
 ## diff算法
@@ -365,3 +415,13 @@ const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
 + 问：如果没有在 constructor 的 super 函数中传递 props，那么接下来 constructor 执行上下文中就获取不到 props ，这是为什么呢？
 
   答：绑定 props 是在父类 Component 构造函数中，执行 super 等于执行 Component 函数，此时 props 没有作为第一个参数传给 super() ，在 Component 中就会找不到 props 参数，从而变成 undefined ，在接下来 constructor 代码中打印 props 为 undefined 
+
+
+
++ 类组件中的 `setState` 和函数组件中的 `useState` 有什么异同？
+  + 相同点
+    + 首先从原理角度出发，setState和 useState 更新视图，底层都调用了 scheduleUpdateOnFiber 方法，而且事件驱动情况下都有批量更新规则。
+  + 不同点
+    + 在不是 pureComponent 组件模式下， setState 不会浅比较两次 state 的值，只要调用 setState，在没有其他优化手段的前提下，就会执行更新。但是 useState 中的 dispatchAction 会默认比较两次 state 是否相同，然后决定是否更新组件。
+    + setState 有专门监听 state 变化的回调函数 callback，可以获取最新state；但是在函数组件中，只能通过 useEffect 来执行 state 变化引起的副作用。
+    + setState 在底层处理逻辑上主要是和老 state 进行合并处理，而 useState 更倾向于重新赋值。
