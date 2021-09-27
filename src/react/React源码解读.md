@@ -216,6 +216,142 @@ const handleClick=()=>{
 
 + 函数组件中：`useEffect`
 
+### 简单实现Form表单
+
+```tsx
+import React from 'react';
+import { Button, Input } from 'antd';
+import css from './index.less';
+import { Bind } from 'lodash-decorators/bind';
+
+interface IProps {
+    label: string;
+    name: string;
+}
+
+class FormItem extends React.Component<IProps, any> {
+    public render(): React.ReactNode {
+        const { children, name, handleChange, value, label  } = this.props;
+        const _onChange = this.props.children.props.onChange;
+        const onChange = (e) => {
+            _onChange && _onChange(e);
+            handleChange(name, e.target.value);
+        };
+        return (
+            <div className={ css.formItem } >
+                <span className={ css.label } >{ label }:</span>
+                {
+                    React.isValidElement(children)
+                        ? React.cloneElement(children, { onChange , value })
+                        : null
+                }
+            </div>
+        );
+    }
+}
+
+FormItem.displayName = 'formItem';
+
+interface IProps {
+    onFinish?: (values: any) => void;
+}
+
+interface IStates {
+    formData: any;
+}
+
+class Form extends React.Component<IProps, IStates> {
+    public item = FormItem;
+
+    constructor() {
+        super();
+        this.state = {
+            formData: {}
+        };
+    }
+    /* 获取重置表单数据 */
+    @Bind
+    public resetForm() {
+        const { formData } = this.state;
+        Object.keys(formData).forEach(item => {
+            formData[item] = '';
+        });
+        this.setState({
+            formData
+        });
+    }
+    /* 设置表单数据层 */
+    @Bind
+    public setValue(name, value) {
+        this.setState({
+            formData: {
+                ...this.state.formData,
+                [name]: value
+            }
+        });
+    }
+
+    public render(): React.ReactNode {
+        const renderChildren = [];
+        const { onFinish } = this.props;
+        React.Children.forEach(this.props.children, (child, index) => {
+            if (child.type.displayName === 'formItem') {
+                const { name } = child.props;
+                const Children = React.cloneElement(child, {
+                    key: name,
+                    handleChange: this.setValue,
+                    value: this.state.formData[name] || ''
+                }, child.props.children);
+                renderChildren.push(Children);
+            } else if (child.props.htmlType === 'submit' && child.type === Button) {
+                const Children = React.cloneElement(child, {
+                    onClick: () => {
+                        onFinish(this.state.formData);
+                    },
+                });
+                renderChildren.push(Children);
+            } else {
+              // ...
+            }
+        });
+        return renderChildren;
+    }
+}
+Form.displayName = 'form';
+
+export class CustomForm extends React.Component<any, any> {
+    public onChange(e) {
+        console.log(e.target.value); // 组件本身的事件
+    }
+    @Bind
+    public onFinish(values) {
+        console.log(values);
+    }
+    public render(): React.ReactNode {
+        return (
+            <div>
+                <Form
+                    onFinish={ this.onFinish }
+                >
+                    <FormItem label={ '姓名' } name={ 'user' }>
+                        <Input onChange={ this.onChange } />
+                    </FormItem>
+                    <FormItem label={ '邮箱' } name={ 'email' }>
+                        <Input />
+                    </FormItem>
+                    <Button htmlType={ 'submit' }>
+                        提交
+                    </Button>
+                </Form>
+            </div>
+        );
+    }
+}
+
+```
+
+
+
 
 
 
