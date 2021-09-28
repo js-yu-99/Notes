@@ -125,6 +125,105 @@ export const Deletion = /*              */ 0b0000000001000;
 
 
 
+## 代数效应
+
+`代数效应`是`函数式编程`中的一个概念，用于将`副作用`从`函数`调用中分离。
+
+React中的代数效应体现为`hooks`
+
+
+
+## Fiber
+
+`Fiber`并不是计算机术语中的新名词，他的中文翻译叫做`纤程`，与进程（Process）、线程（Thread）、协程（Coroutine）同为程序执行过程。
+
+`React Fiber`可以理解为：
+
+`React`内部实现的一套状态更新机制。支持任务不同`优先级`，可中断与恢复，并且恢复后可以复用之前的`中间状态`。
+
+其中每个任务更新单元为`React Element`对应的`Fiber节点`。
+
+### Fiber结构
+
+```js
+function FiberNode(
+  tag: WorkTag,
+  pendingProps: mixed,
+  key: null | string,
+  mode: TypeOfMode,
+) {
+  // 作为静态数据结构的属性
+  // Fiber对应组件的类型 Function/Class/Host...
+  this.tag = tag;
+  // key属性
+  this.key = key;
+  // 大部分情况同type，某些情况不同，比如FunctionComponent使用React.memo包裹
+  this.elementType = null;
+  // 对于 FunctionComponent，指函数本身，对于ClassComponent，指class，对于HostComponent，指DOM节点tagName
+  this.type = null;
+  // Fiber对应的真实DOM节点
+  this.stateNode = null;
+
+  // 用于连接其他Fiber节点形成Fiber树
+  // 指向父级Fiber节点
+	this.return = null;
+	// 指向子Fiber节点
+	this.child = null;
+	// 指向右边第一个兄弟Fiber节点
+	this.sibling = null;
+  this.index = 0;
+
+  this.ref = null;
+
+  // 作为动态的工作单元的属性
+  this.pendingProps = pendingProps;
+  this.memoizedProps = null;
+  this.updateQueue = null;
+  this.memoizedState = null;
+  this.dependencies = null;
+
+  this.mode = mode;
+	// 保存本次更新会造成的DOM操作
+  this.effectTag = NoEffect;
+  this.nextEffect = null;
+
+  this.firstEffect = null;
+  this.lastEffect = null;
+
+  // 调度优先级相关
+  this.lanes = NoLanes;
+  this.childLanes = NoLanes;
+
+  // 指向该fiber在另一次更新时对应的fiber
+  this.alternate = null;
+}
+```
+
+### 双缓存
+
+> **在内存中构建并直接替换**的技术
+
+`React`使用“双缓存”来完成`Fiber树`的构建与替换——对应着`DOM树`的创建与更新。
+
+#### 双缓存fiber树
+
+在`React`中最多会同时存在两棵`Fiber树`。当前屏幕上显示内容对应的`Fiber树`称为`current Fiber树`，正在内存中构建的`Fiber树`称为`workInProgress Fiber树`。
+
+`current Fiber树`中的`Fiber节点`被称为`current fiber`，`workInProgress Fiber树`中的`Fiber节点`被称为`workInProgress fiber`，他们通过`alternate`属性连接。
+
+```js
+currentFiber.alternate === workInProgressFiber;
+workInProgressFiber.alternate === currentFiber;
+```
+
+`React`应用的根节点通过使`current`指针在不同`Fiber树`的`rootFiber`间切换来完成`current Fiber`树指向的切换。
+
+即当`workInProgress Fiber树`构建完成交给`Renderer`渲染在页面上后，应用根节点的`current`指针指向`workInProgress Fiber树`，此时`workInProgress Fiber树`就变为`current Fiber树`。
+
+每次状态更新都会产生新的`workInProgress Fiber树`，通过`current`与`workInProgress`的替换，完成`DOM`更新。
+
+
+
 ## diff算法
 
 ### 单节点diff
