@@ -477,7 +477,7 @@ if (
 
 由于`completeWork`属于“归”阶段调用的函数，每次调用`appendAllChildren`时都会将已生成的子孙`DOM节点`插入当前生成的`DOM节点`下。那么当“归”到`rootFiber`时，我们已经有一个构建好的离屏`DOM树`。
 
-
+（在`reconcileChildren`的时候，rootFiber是存在alternate的，即rootFiber存在对应的current Fiber，所以rootFiber会走`reconcileChildFibers`的逻辑，所以`shouldTrackSideEffects`等于true会追踪副作用，最后为rootFiber打上`Placement`的`effectTag`，然后将dom一次性插入，提高性能。）
 
 
 
