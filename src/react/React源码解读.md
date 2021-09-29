@@ -373,6 +373,112 @@ export function reconcileChildren(
 
 ![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1632874736160-235ed54e-c263-4a58-844e-ebe2dc72f82f.png)
 
+### completeWork
+
+```js
+function completeWork(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+): Fiber | null {
+  const newProps = workInProgress.pendingProps;
+
+  switch (workInProgress.tag) {
+    case IndeterminateComponent:
+    case LazyComponent:
+    case SimpleMemoComponent:
+    case FunctionComponent:
+    case ForwardRef:
+    case Fragment:
+    case Mode:
+    case Profiler:
+    case ContextConsumer:
+    case MemoComponent:
+      return null;
+    case ClassComponent: {
+      // ...省略
+      return null;
+    }
+    case HostRoot: {
+      // ...省略
+      updateHostContainer(workInProgress);
+      return null;
+    }
+    case HostComponent: {
+      // ...省略
+      return null;
+    }
+  // ...省略
+```
+
+和`beginWork`一样，我们根据`current === null ?`判断是`mount`还是`update`。
+
+同时针对`HostComponent`，判断`update`时我们还需要考虑`workInProgress.stateNode != null ?`（即该`Fiber节点`是否存在对应的`DOM节点`）
+
+```js
+case HostComponent: {
+  popHostContext(workInProgress);
+  const rootContainerInstance = getRootHostContainer();
+  const type = workInProgress.type;
+
+  if (current !== null && workInProgress.stateNode != null) {
+    // update的情况
+    // ...省略
+  } else {
+    // mount的情况
+    // ...省略
+  }
+  return null;
+}
+```
+
+#### mount阶段
+
+- 为`Fiber节点`生成对应的`DOM节点`
+- 将子孙`DOM节点`插入刚生成的`DOM节点`中
+- 与`update`逻辑中的`updateHostComponent`类似的处理`props`的过程
+
+```js
+// mount的情况
+
+// ...省略服务端渲染相关逻辑
+
+const currentHostContext = getHostContext();
+// 为fiber创建对应DOM节点
+const instance = createInstance(
+    type,
+    newProps,
+    rootContainerInstance,
+    currentHostContext,
+    workInProgress,
+  );
+// 将子孙DOM节点插入刚生成的DOM节点中
+appendAllChildren(instance, workInProgress, false, false);
+// DOM节点赋值给fiber.stateNode
+workInProgress.stateNode = instance;
+
+// 与update逻辑中的updateHostComponent类似的处理props的过程
+if (
+  finalizeInitialChildren(
+    instance,
+    type,
+    newProps,
+    rootContainerInstance,
+    currentHostContext,
+  )
+) {
+  markUpdate(workInProgress);
+}
+```
+
+`mount`时只会在`rootFiber`存在`Placement effectTag`。那么`commit阶段`是如何通过一次插入`DOM`操作（对应一个`Placement effectTag`）将整棵`DOM树`插入页面的呢？
+
+原因就在于`completeWork`中的`appendAllChildren`方法。
+
+由于`completeWork`属于“归”阶段调用的函数，每次调用`appendAllChildren`时都会将已生成的子孙`DOM节点`插入当前生成的`DOM节点`下。那么当“归”到`rootFiber`时，我们已经有一个构建好的离屏`DOM树`。
+
+
+
 
 
 ## diff算法
