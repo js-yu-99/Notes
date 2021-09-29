@@ -222,6 +222,157 @@ workInProgressFiber.alternate === currentFiber;
 
 每次状态更新都会产生新的`workInProgress Fiber树`，通过`current`与`workInProgress`的替换，完成`DOM`更新。
 
+> FiberRootNode -> rootFiber -> ...
+
+
+
+## render阶段
+
+### 递-阶段
+
+首先从rootFiber开始向下深度优先遍历。为遍历到的每个Fiber节点调用beginWork方法。
+
+该方法会根据传入的Fiber节点创建子Fiber节点，并将这两个Fiber节点连接起来。
+
+当遍历到叶子节点（即没有子组件的组件）时就会进入“归”阶段。
+
+### 归-阶段
+
+在“归”阶段会调用completeWork处理Fiber节点。
+
+当某个Fiber节点执行完completeWork，如果其存在兄弟Fiber节点（即fiber.sibling !== null），会进入其兄弟Fiber的“递”阶段。
+
+如果不存在兄弟Fiber，会进入父级Fiber的“归”阶段。
+
+“递”和“归”阶段会交错执行直到“归”到rootFiber。至此，render阶段的工作就结束了。
+
+### beginWork
+
+```jsx
+ReactDOM.render(
+  <Demo />,
+  document.getElementById('root')
+);
+
+export default class Demo extends React.Component<any, any> {
+    public render(): React.ReactNode {
+        return (
+            <div id="APP">
+                <span>nihao</span>
+                <p>
+                    zhongguo
+                </p>
+            		wangyu
+            </div>
+        )
+    }
+}
+```
+
+beginWork执行（深度优先遍历）
+
+> rootFiber(child) <-> (return)-Demo-(child) <-> (return)-div-(child) <-> (return)-span-(child) <-> nihao(return)
+
+completeWork执行
+
+> nihao(return) <-> span-(sibling) <-> p(child) <-> zhongguo(return) -> p -> div -> Demo ...... 
+
+- 当执行到没有子节点的节点时就会调用completeWork，之后依次往上寻找父节点的兄弟节点等操作
+- 如果存在兄弟节点，那就是beginWork和completeWork交替执行的过程
+
+- 当节点只有唯一文本节点时，react提供的优化不会为其生成自己的fiber节点
+
+通过current === null ?来区分组件是处于mount还是update。
+
+beginWork的工作可以分为两部分：
+
+- update时：如果current存在，在满足一定条件时可以复用current节点，这样就能克隆current.child作为workInProgress.child，而不需要新建workInProgress.child。
+- mount时：除fiberRootNode以外，current === null。会根据fiber.tag不同，创建不同类型的子Fiber节点
+
+```jsx
+function beginWork(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  renderLanes: Lanes,
+): Fiber | null {
+  // update时：如果current存在可能存在优化路径，可以复用current（即上一次更新的Fiber节点）
+  if (current !== null) {
+    // ...省略
+
+    // 复用current
+    return bailoutOnAlreadyFinishedWork(
+      current,
+      workInProgress,
+      renderLanes,
+    );
+  } else {
+    didReceiveUpdate = false;
+  }
+
+  // mount时：根据tag不同，创建不同的子Fiber节点
+  switch (workInProgress.tag) {
+    case IndeterminateComponent: 
+      // ...省略
+    case LazyComponent: 
+      // ...省略
+    case FunctionComponent: 
+      // ...省略
+    case ClassComponent: 
+      // ...省略
+    case HostRoot:
+      // ...省略
+    case HostComponent:
+      // ...省略
+    case HostText:
+      // ...省略
+    // ...省略其他类型
+  }
+}
+```
+
+- current：当前组件对应的Fiber节点在上一次更新时的Fiber节点，即workInProgress.alternate
+- workInProgress：当前组件对应的Fiber节点
+
+- renderLanes：优先级相关
+
+#### reconcileChildren
+
+- 对于mount的组件，他会创建新的子Fiber节点
+- 对于update的组件，他会将当前组件与该组件在上次更新时对应的Fiber节点比较（也就是俗称的Diff算法），将比较的结果生成新Fiber节点
+
+```jsx
+export function reconcileChildren(
+  current: Fiber | null,
+  workInProgress: Fiber,
+  nextChildren: any,
+  renderLanes: Lanes
+) {
+  if (current === null) {
+    // 对于mount的组件
+    workInProgress.child = mountChildFibers(
+      workInProgress,
+      null,
+      nextChildren,
+      renderLanes,
+    );
+  } else {
+    // 对于update的组件
+    workInProgress.child = reconcileChildFibers(
+      workInProgress,
+      current.child,
+      nextChildren,
+      renderLanes,
+    );
+  }
+}
+```
+
+> mountChildFibers与reconcileChildFibers这两个方法的逻辑基本一致。唯一的区别是：reconcileChildFibers会为生成的Fiber节点带上effectTag属性，而mountChildFibers不会。
+
+
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1632874736160-235ed54e-c263-4a58-844e-ebe2dc72f82f.png)
+
 
 
 ## diff算法
