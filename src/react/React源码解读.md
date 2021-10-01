@@ -479,6 +479,38 @@ if (
 
 （在`reconcileChildren`的时候，rootFiber是存在alternate的，即rootFiber存在对应的current Fiber，所以rootFiber会走`reconcileChildFibers`的逻辑，所以`shouldTrackSideEffects`等于true会追踪副作用，最后为rootFiber打上`Placement`的`effectTag`，然后将dom一次性插入，提高性能。）
 
+#### update阶段
+
+当`update`时，`Fiber节点`已经存在对应`DOM节点`，所以不需要生成`DOM节点`。需要做的主要是处理`props`，比如：
+
+- `onClick`、`onChange`等回调函数的注册
+- 处理`style prop`
+- 处理`DANGEROUSLY_SET_INNER_HTML prop`
+- 处理`children prop`
+
+我们去掉一些当前不需要关注的功能（比如`ref`）。可以看到最主要的逻辑是调用`updateHostComponent`方法。
+
+```js
+if (current !== null && workInProgress.stateNode != null) {
+  // update的情况
+  updateHostComponent(
+    current,
+    workInProgress,
+    type,
+    newProps,
+    rootContainerInstance,
+  );
+}
+```
+
+在`updateHostComponent`内部，被处理完的`props`会被赋值给`workInProgress.updateQueue`，并最终会在`commit阶段`被渲染在页面上。
+
+```ts
+workInProgress.updateQueue = (updatePayload: any);
+```
+
+其中`updatePayload`为数组形式，他的偶数索引的值为变化的`prop key`，奇数索引的值为变化的`prop value`。
+
 
 
 ## diff算法
