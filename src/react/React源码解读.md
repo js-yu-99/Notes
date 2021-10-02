@@ -513,6 +513,14 @@ workInProgress.updateQueue = (updatePayload: any);
 
 
 
+`Renderer`工作的阶段被称为`commit`阶段。`commit`阶段可以分为三个子阶段：
+
+- before mutation阶段（执行`DOM`操作前）
+- mutation阶段（执行`DOM`操作）
+- layout阶段（执行`DOM`操作后）
+
+
+
 ## diff算法
 
 ### 单节点diff
