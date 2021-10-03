@@ -519,6 +519,27 @@ workInProgress.updateQueue = (updatePayload: any);
 - mutation阶段（执行`DOM`操作）
 - layout阶段（执行`DOM`操作后）
 
+```js
+// 保存之前的优先级，以同步优先级执行，执行完毕后恢复之前优先级
+const previousLanePriority = getCurrentUpdateLanePriority();
+setCurrentUpdateLanePriority(SyncLanePriority);
+
+// 将当前上下文标记为CommitContext，作为commit阶段的标志
+const prevExecutionContext = executionContext;
+executionContext |= CommitContext;
+
+// 处理focus状态
+focusedInstanceHandle = prepareForCommit(root.containerInfo);
+shouldFireAfterActiveInstanceBlur = false;
+
+// beforeMutation阶段的主函数
+commitBeforeMutationEffects(finishedWork);
+
+focusedInstanceHandle = null;
+```
+
+
+
 
 
 ## diff算法
