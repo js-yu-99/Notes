@@ -84,3 +84,29 @@
 }
 ```
 
+
+
+## 接口
+
+接口是TypeScript的一个核心知识，他它能合并众多类型声明至一个类型声明
+
+```typescript
+interface IInfo {
+	name: string;
+  age: number;
+}
+let info: IInfo;
+info = {
+  name: 'wangyu',
+  age: 20
+}
+info = {
+  // Error: 'name is missing in type ...'
+  age: 20
+}
+info = {
+  name: 'wangyu',
+  age: '20' // Type 'string' is not assignable to type 'number'. | The expected type comes from property 'age' which is declared here on type 'IInfo'
+}
+```
+
