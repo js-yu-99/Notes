@@ -352,6 +352,105 @@ export class CustomForm extends React.Component<any, any> {
 
 
 
+## 生命周期
+
+React 有两个重要阶段，`render` 阶段和 `commit` 阶段，React 在render阶段会深度遍历 React fiber 树，目的就是发现不同( diff )，不同的地方就是接下来需要更新的地方，对于变化的组件，就会执行 render 函数。在一次调和过程完毕之后，就到了commit 阶段，commit 阶段会创建修改真实的 DOM 节点。
+
+```js
+/* workloop React 处理类组件的主要功能方法 */
+function updateClassComponent(){
+    let shouldUpdate
+    const instance = workInProgress.stateNode // stateNode 是 fiber 指向 类组件实例的指针。
+     if (instance === null) { // instance 为组件实例,如果组件实例不存在，证明该类组件没有被挂载过，那么会走初始化流程
+        constructClassInstance(workInProgress, Component, nextProps); // 组件实例将在这个方法中被new。
+        mountClassInstance(  workInProgress,Component, nextProps,renderExpirationTime ); //初始化挂载组件流程
+        shouldUpdate = true; // shouldUpdate 标识用来证明 组件是否需要更新。
+     }else{  
+        shouldUpdate = updateClassInstance(current, workInProgress, Component, nextProps, renderExpirationTime) // 更新组件流程
+     }
+     if(shouldUpdate){
+        nextChildren = instance.render(); /* 执行render函数 ，得到子节点 */
+        reconcileChildren(current,workInProgress,nextChildren,renderExpirationTime) /* 继续调和子节点 */
+     }
+}
+```
+
+几个重要概念：
+
+- ① instance 类组件对应实例。
+- ② workInProgress 树，当前正在render的 fiber 树 ，一次更新中，React 会自上而下深度遍历子代 fiber ，如果遍历到一个 fiber ，会把当前 fiber 指向 workInProgress。
+
+- ③ current 树，在初始化更新中，current = null ，在第一次 fiber render之后，会将 workInProgress 树赋值给 current 树。React 来用workInProgress 和 current 来确保一次更新中，快速构建，并且状态不丢失。
+- ④ Component 就是项目中的 class 组件。
+
+- ⑤ nextProps 作为组件在一次更新中新的 props 。
+- ⑥ renderExpirationTime 作为下一次渲染的过期时间。
+
+
+
+在组件实例上可以通过` _reactInternals` 属性来访问组件对应的 fiber 对象。在 fiber 对象上，可以通过 stateNode 来访问当前 fiber 对应的组件实例。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633424460156-70755565-5e77-4d2b-989d-1ed02228e447.png)
+
+### 初始化阶段
+
+**① constructor 执行**
+
+在 mount 阶段，首先执行的 constructClassInstance 函数，用来实例化 React 组件。在实例化组件之后，会调用 mountClassInstance 组件初始化。
+
+```js
+function mountClassInstance(workInProgress,ctor,newProps,renderExpirationTime){
+    const instance = workInProgress.stateNode;
+     const getDerivedStateFromProps = ctor.getDerivedStateFromProps;
+  if (typeof getDerivedStateFromProps === 'function') { /* ctor 就是我们写的类组件，获取类组件的静态防范 */
+     const partialState = getDerivedStateFromProps(nextProps, prevState); /* 这个时候执行 getDerivedStateFromProps 生命周期 ，得到将合并的state */
+     const memoizedState = partialState === null || partialState === undefined ? prevState : Object.assign({}, prevState, partialState); // 合并state
+     workInProgress.memoizedState = memoizedState;
+     instance.state = workInProgress.memoizedState; /* 将state 赋值给我们实例上，instance.state  就是我们在组件中 this.state获取的state*/
+  }
+  if(typeof ctor.getDerivedStateFromProps !== 'function' &&   typeof instance.getSnapshotBeforeUpdate !== 'function' && typeof instance.componentWillMount === 'function' ){
+      instance.componentWillMount(); /* 当 getDerivedStateFromProps 和 getSnapshotBeforeUpdate 不存在的时候 ，执行 componentWillMount*/
+  }
+}
+```
+
+**② getDerivedStateFromProps 执行**
+
+在初始化阶段，getDerivedStateFromProps 是第二个执行的生命周期，值得注意的是它是从 ctor 类上直接绑定的静态方法，传入 props ，state 。 返回值将和之前的 state 合并，作为新的 state ，传递给组件实例使用。
+
+**③ componentWillMount 执行**
+
+如果存在 getDerivedStateFromProps 和 getSnapshotBeforeUpdate 就不会执行生命周期componentWillMount。
+
+**④ render 函数执行**
+
+到此为止 mountClassInstancec 函数完成，但是上面 updateClassComponent 函数， 在执行完 mountClassInstancec 后，执行了 render 渲染函数，形成了 children ， 接下来 React 调用 reconcileChildren 方法深度调和 children 。
+
+**⑤componentDidMount执行**
+
+一旦 React 调和完所有的 fiber 节点，就会到 commit 阶段，在组件初始化 commit 阶段，会调用 componentDidMount 生命周期。
+
+```js
+function commitLifeCycles(finishedRoot,current,finishedWork){
+     switch (finishedWork.tag){                             /* fiber tag 在第一节讲了不同fiber类型 */
+        case ClassComponent: {                              /* 如果是 类组件 类型 */
+             const instance = finishedWork.stateNode        /* 类实例 */
+             if(current === null){                          /* 类组件第一次调和渲染 */
+                instance.componentDidMount() 
+             }else{                                         /* 类组件更新 */
+                instance.componentDidUpdate(prevProps,prevState，instance.__reactInternalSnapshotBeforeUpdate); 
+             }
+        }
+     }
+}
+```
+
+ componentDidMount 执行时机 和 componentDidUpdate 执行时机是相同的 ，只不过一个是针对初始化，一个是针对组件再更新。到此初始化阶段，生命周期执行完毕。
+
+执行顺序：constructor -> getDerivedStateFromProps / componentWillMount -> render -> componentDidMount
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633425911011-d0607d4a-a943-456e-b505-bd5c6e4fa4bf.png)
+
 
 
 
@@ -379,3 +478,6 @@ export class CustomForm extends React.Component<any, any> {
     + 在不是 pureComponent 组件模式下， setState 不会浅比较两次 state 的值，只要调用 setState，在没有其他优化手段的前提下，就会执行更新。但是 useState 中的 dispatchAction 会默认比较两次 state 是否相同，然后决定是否更新组件。
     + setState 有专门监听 state 变化的回调函数 callback，可以获取最新state；但是在函数组件中，只能通过 useEffect 来执行 state 变化引起的副作用。
     + setState 在底层处理逻辑上主要是和老 state 进行合并处理，而 useState 更倾向于重新赋值。
+
+
+
