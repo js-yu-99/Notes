@@ -418,6 +418,22 @@ function mountClassInstance(workInProgress,ctor,newProps,renderExpirationTime){
 
 在初始化阶段，getDerivedStateFromProps 是第二个执行的生命周期，值得注意的是它是从 ctor 类上直接绑定的静态方法，传入 props ，state 。 返回值将和之前的 state 合并，作为新的 state ，传递给组件实例使用。
 
+```js
+static getDerivedStateFromProps(nextProps, prevState) {
+    const {type} = nextProps;
+    // 当传入的type发生变化的时候，更新state
+    if (type !== prevState.type) {
+        return {
+            type,
+        };
+    }
+    // 否则，对于state不进行任何操作
+    return null;
+}
+```
+
+这个生命周期函数是为了替代`componentWillReceiveProps`存在的
+
 **③ componentWillMount 执行**
 
 如果存在 getDerivedStateFromProps 和 getSnapshotBeforeUpdate 就不会执行生命周期componentWillMount。
@@ -451,7 +467,151 @@ function commitLifeCycles(finishedRoot,current,finishedWork){
 
 ![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633425911011-d0607d4a-a943-456e-b505-bd5c6e4fa4bf.png)
 
+### 更新阶段
 
+```
+function updateClassInstance(current,workInProgress,ctor,newProps,renderExpirationTime){
+    const instance = workInProgress.stateNode; // 类组件实例
+    const hasNewLifecycles =  typeof ctor.getDerivedStateFromProps === 'function'  // 判断是否具有 getDerivedStateFromProps 生命周期
+    if(!hasNewLifecycles && typeof instance.componentWillReceiveProps === 'function' ){
+         if (oldProps !== newProps || oldContext !== nextContext) {     // 浅比较 props 不相等
+            instance.componentWillReceiveProps(newProps, nextContext);  // 执行生命周期 componentWillReceiveProps 
+         }
+    }
+    let newState = (instance.state = oldState);
+    if (typeof getDerivedStateFromProps === 'function') {
+        ctor.getDerivedStateFromProps(nextProps,prevState)  /* 执行生命周期getDerivedStateFromProps  ，逻辑和mounted类似 ，合并state  */
+        newState = workInProgress.memoizedState;
+    }   
+    let shouldUpdate = true
+    if(typeof instance.shouldComponentUpdate === 'function' ){ /* 执行生命周期 shouldComponentUpdate 返回值决定是否执行render ，调和子节点 */
+        shouldUpdate = instance.shouldComponentUpdate(newProps,newState,nextContext,);
+    }
+    if(shouldUpdate){
+        if (typeof instance.componentWillUpdate === 'function') {
+            instance.componentWillUpdate(); /* 执行生命周期 componentWillUpdate  */
+        }
+    }
+    return shouldUpdate
+}
+```
+
+**①执行生命周期 componentWillReceiveProps**
+
+首先判断 getDerivedStateFromProps 生命周期是否存在，如果不存在就执行componentWillReceiveProps生命周期。传入该生命周期两个参数，分别是 newProps 和 nextContext 。
+
+**②执行生命周期 getDerivedStateFromProps**
+
+接下来执行生命周期getDerivedStateFromProps， 返回的值用于合并state，生成新的state。
+
+**③执行生命周期 shouldComponentUpdate**
+
+接下来执行生命周期shouldComponentUpdate，传入新的 props ，新的 state ，和新的 context ，返回值决定是否继续执行 render 函数，调和子节点。这里应该注意一个问题，getDerivedStateFromProps 的返回值可以作为新的 state ，传递给 shouldComponentUpdate 。
+
+**④执行生命周期 componentWillUpdate**
+
+接下来执行生命周期 componentWillUpdate。updateClassInstance 方法到此执行完毕了。
+
+**⑤执行 render 函数**
+
+接下来会执行 render 函数，得到最新的 React element 元素。然后继续调和子节点。
+
+**⑥执行 getSnapshotBeforeUpdate**
+
+getSnapshotBeforeUpdate 的执行也是在 commit 阶段，commit 阶段细分为 before Mutation( DOM 修改前)，Mutation ( DOM 修改)，Layout( DOM 修改后) 三个阶段，getSnapshotBeforeUpdate 发生在before Mutation 阶段，生命周期的返回值，将作为第三个参数 __reactInternalSnapshotBeforeUpdate 传递给 componentDidUpdate 。
+
+**⑦执行 componentDidUpdate**
+
+接下来执行生命周期 componentDidUpdate ，此时 DOM 已经修改完成。可以操作修改之后的 DOM 。到此为止更新阶段的生命周期执行完毕。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633428636068-25d10889-3c96-4586-a9de-845cb78080da.png)
+
+
+
+更新阶段对应的生命周期的执行顺序：
+
+componentWillReceiveProps( props 改变) / getDerivedStateFromProp -> shouldComponentUpdate -> componentWillUpdate -> render -> getSnapshotBeforeUpdate -> componentDidUpdate
+
+### 销毁阶段
+
+**①执行生命周期 componentWillUnmount**
+
+在一次调和更新中，如果发现元素被移除，就会打对应的 Deletion 标签 ，然后在 commit 阶段就会调用 componentWillUnmount 生命周期，接下来统一卸载组件以及 DOM 元素。
+
+componentWillUnmount 生命周期，接下来统一卸载组件以及 DOM 元素。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633429917241-218d40ce-94de-4944-9c1d-2b04e5ae2a2c.png)
+
+
+
+### React 各阶段生命周期能做些什么
+
+#### 1 constructor
+
+React 在不同时期抛出不同的生命周期钩子，也就意味这这些生命周期钩子的使命。上面讲过 constructor 在类组件创建实例时调用，而且初始化的时候执行一次，所以可以在 constructor 做一些初始化的工作。
+
+```js
+constructor(props){
+    super(props)        // 执行 super ，别忘了传递props,才能在接下来的上下文中，获取到props。
+    this.state={       //① 可以用来初始化state，比如可以用来获取路由中的
+        name:'alien'
+    }
+    this.handleClick = this.handleClick.bind(this) /* ② 绑定 this */
+    this.handleInputChange = debounce(this.handleInputChange , 500) /* ③ 绑定防抖函数，防抖 500 毫秒 */
+    const _render = this.render
+    this.render = function(){
+        return _render.bind(this)  /* ④ 劫持修改类组件上的一些生命周期 */
+    }
+}
+/* 点击事件 */
+handleClick(){ /* ... */ }
+/* 表单输入 */
+handleInputChange(){ /* ... */ }
+```
+
+constructor 作用：
+
+- 初始化 state ，比如可以用来截取路由中的参数，赋值给 state 。
+- 对类组件的事件做一些处理，比如绑定 this ， 节流，防抖等。
+
+- 对类组件进行一些必要生命周期的劫持，渲染劫持，这个功能更适合反向继承的HOC ，在 HOC 环节，会详细讲解反向继承这种模式。
+
+#### 2 getDerivedStateFromProps
+
+> getDerivedStateFromProps(nextProps,prevState) 
+
+两个参数：
+
+- nextProps 父组件新传递的 props ;
+- prevState 组件在此次更新前的 state 。
+
+getDerivedStateFromProps 方法作为类的静态属性方法执行，内部是访问不到 this 的，它更趋向于纯函数，从源码中就能够体会到 React 对该生命周期定义为取缔 componentWillMount 和 componentWillReceiveProps 。
+
+如果把 getDerivedStateFromProps 英文分解 get ｜ Derived | State ｜ From ｜ Props 翻译  **得到 派生的 state 从 props 中** ，正如它的名字一样，这个生命周期用于，在初始化和更新阶段，接受父组件的 props 数据， 可以对 props 进行格式化，过滤等操作，返回值将作为新的 state 合并到 state 中，供给视图渲染层消费。
+
+从源码中可以看到，只要组件更新，就会执行 getDerivedStateFromProps，不管是 props 改变，还是 setState ，或是 forceUpdate 。
+
+```jsx
+static getDerivedStateFromProps(newProps){
+    const { type } = newProps
+    switch(type){
+        case 'fruit' : 
+        return { list:['苹果','香蕉','葡萄' ] } /* ① 接受 props 变化 ， 返回值将作为新的 state ，用于 渲染 或 传递给s houldComponentUpdate */
+        case 'vegetables':
+        return { list:['菠菜','西红柿','土豆']}
+    }
+}
+render(){
+    return <div>{ this.state.list.map((item)=><li key={item} >{ item  }</li>) }</div>
+}
+```
+
+getDerivedStateFromProps 作用：
+
+- 代替 `componentWillMount` 和 `componentWillReceiveProps`
+- 组件初始化或者更新时，将 props 映射到 state。
+
+- 返回值与 state 合并完，可以作为 `shouldComponentUpdate` 第二个参数 newState ，可以判断是否渲染组件。(`getDerivedStateFromProps` 和 `shouldComponentUpdate` 两者没有必然联系)
 
 
 
