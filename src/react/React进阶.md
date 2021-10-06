@@ -613,9 +613,101 @@ getDerivedStateFromProps 作用：
 
 - 返回值与 state 合并完，可以作为 `shouldComponentUpdate` 第二个参数 newState ，可以判断是否渲染组件。(`getDerivedStateFromProps` 和 `shouldComponentUpdate` 两者没有必然联系)
 
+#### 3.componentWillMount
+
+在react组件加载完之前立即执行，此时还不能访问到真实的dom结构.
+
+#### 4.componentWillReceiveProps
+
+函数的执行是在更新组件阶段，该生命周期执行驱动是因为父组件更新带来的 props 修改，但是只要父组件触发 render 函数，调用 React.createElement 方法，那么 props 就会被重新创建，生命周期 componentWillReceiveProps 就会执行了。这就解释了即使 props 没变，该生命周期也会执行。
+
+- componentWillReceiveProps 可以用来监听父组件是否执行 render 。
+- componentWillReceiveProps 可以用来接受 props 改变，组件可以根据props改变，来决定是否更新 state ，因为可以访问到 this ， 所以可以在异步成功回调(接口请求数据)改变 state 。这个是 getDerivedStateFromProps 不能实现的。
+
+#### 5.componentWillUpdate
+
+在更新发生前被立即调用
+
+#### 6.render
+
+所谓 render 函数，就是 jsx 的各个元素被 React.createElement 创建成 React element 对象的形式。一次 render 的过程，就是创建 React.element 元素的过程。
+
+#### 7.getSnapshotBeforeUpdate
+
+> **getSnapshotBeforeUpdate**(prevProps,preState){}
+
+两个参数：
+
+- prevProps更新前的props ；
+- preState更新前的state；
+
+**获取更新前的快照**，可以进一步理解为 获取更新前 DOM 的状态
+
+作用：
+
+- getSnapshotBeforeUpdate 这个生命周期意义就是配合componentDidUpdate 一起使用，计算形成一个 snapShot 传递给 componentDidUpdate 。保存一次更新前的信息。
+
+#### 8.componentDidUpdate
+
+> **componentDidUpdate**(prevProps, prevState, snapshot) {}
+
+三个参数：
+
+- prevProps 更新之前的 props ；
+- prevState 更新之前的 state ；
+- snapshot 为 getSnapshotBeforeUpdate 返回的快照，可以是更新前的 DOM 信息。
+
+#### 9.componentDidMount
+
+componentDidMount 生命周期执行时机和 componentDidUpdate 一样，一个是在**初始化**，一个是**组件更新**。此时 DOM 已经创建完。
+
+作用：
+
+- 可以做一些关于 DOM 操作，比如基于 DOM 的事件监听器。
+
+#### 10.shouldComponentUpdate
+
+> **shouldComponentUpdate**(newProps,newState,nextContext){}
+
+shouldComponentUpdate 三个参数，第一个参数新的 props ，第二个参数新的 state ，第三个参数新的 context 。
+
+```js
+shouldComponentUpdate(newProps,newState){
+    if(newProps.a !== this.props.a ){ /* props中a属性发生变化 渲染组件 */
+        return true
+    }else if(newState.b !== this.props.b ){ /* state 中b属性发生变化 渲染组件 */
+        return true
+    }else{ /* 否则组件不渲染 */
+        return false
+    }
+}
+```
+
+- 这个生命周期，一般用于性能优化，shouldComponentUpdate 返回值决定是否重新渲染的类组件。需要重点关注的是第二个参数 newState ，如果有 getDerivedStateFromProps 生命周期 ，它的返回值将合并到 newState ，供 shouldComponentUpdate 使用。
+
+#### 11.componentWillUnmount
+
+componentWillUnmount 是组件销毁阶段唯一执行的生命周期，主要做一些收尾工作，比如清除一些可能造成内存泄漏的定时器，延时器，或者是一些事件监听器。
+
+### 函数组件生命周期替代方案
+
+#### 1 useEffect 和 useLayoutEffect
+
+```js
+useEffect(()=>{
+    return destory
+},dep)
+```
+
+useEffect 第一个参数 callback, 返回的 destory ， destory 作为下一次callback执行之前调用，用于清除上一次 callback 产生的副作用。
+
+第二个参数作为依赖项，是一个数组，可以有多个依赖项，依赖项改变，执行上一次callback 返回的 destory ，和执行新的 effect 第一个参数 callback 。
 
 
-## 面试题
+
+
+
+## 问与答
 
 + 问：老版本的 React 中，为什么写 jsx 的文件要默认引入 React?
 
@@ -639,5 +731,6 @@ getDerivedStateFromProps 作用：
     + setState 有专门监听 state 变化的回调函数 callback，可以获取最新state；但是在函数组件中，只能通过 useEffect 来执行 state 变化引起的副作用。
     + setState 在底层处理逻辑上主要是和老 state 进行合并处理，而 useState 更倾向于重新赋值。
 
-
++ 问：当 props 不变的前提下， PureComponent 组件能否阻止 componentWillReceiveProps 执行？
+  + 答案是否定的，componentWillReceiveProps 生命周期的执行，和纯组件没有关系，纯组件是在 componentWillReceiveProps 执行之后浅比较 props 是否发生变化。所以 PureComponent 下不会阻止该生命周期的执行。
 
