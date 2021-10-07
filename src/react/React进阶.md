@@ -798,6 +798,262 @@ React.useEffect(()=>{
 
 
 
+## Ref
+
+对于 Ref ，应该分成两个部分去分析，第一个部分是 **Ref 对象的创建**，第二个部分是 **React 本身对Ref的处理**。两者不要混为一谈，所谓 Ref 对象的创建，就是通过 React.createRef 或者 React.useRef 来创建一个 Ref 原始对象。而 React 对 Ref 处理，主要指的是对于标签中 ref 属性，React 是如何处理以及 React 转发 Ref 。
+
+### Ref对象创建
+
+**什么是 ref 对象**，所谓 ref 对象就是用 `createRef` 或者 `useRef` 创建出来的对象，一个标准的 ref 对象应该是如下的样子：
+
+```js
+{
+    current:null , // current指向ref对象获取到的实际内容，可以是dom元素，组件实例，或者其他。
+}
+```
+
+**①类组件React.createRef**
+
+```jsx
+import React from 'react';
+
+export class RefDemo extends React.PureComponent<any, any> {
+    public refDom = React.createRef();
+    public componentDidMount(): void {
+        console.log(this.refDom.current); // <div>
+    }
+
+    public render(): React.ReactNode {
+        return (
+            <div ref={ this.refDom }>
+                reco
+            </div>
+        );
+    }
+}
+```
+
+```js
+function createRef() {
+  var refObject = {
+    current: null
+  };
+  return refObject;
+}
+```
+
+createRef 只做了一件事，就是创建了一个对象，对象上的 current 属性，用于保存通过 ref 获取的 DOM 元素，组件实例等。 createRef 一般用于类组件创建 Ref 对象，可以将 Ref 对象绑定在类组件实例上，这样更方便后续操作 Ref。
+
+注意：不要在函数组件中使用 createRef，否则会造成 Ref 对象内容丢失等情况。
+
+**②函数组件 useRef**
+
+第二种方式就是函数组件创建 Ref ，可以用 hooks 中的 useRef 来达到同样的效果。
+
+```jsx
+const RefDemo = (props) => {
+    const refDom = useRef();
+    useEffect(() => {
+        console.log(refDom.current); // <div>
+    });
+    return (
+        <div ref={ refDom }>
+            reco
+        </div>
+    );
+};
+```
+
+useRef 底层逻辑是和 createRef 差不多，就是 ref 保存位置不相同，类组件有一个实例 instance 能够维护像 ref 这种信息，但是由于函数组件每次更新都是一次新的开始，所有变量重新声明，所以 useRef 不能像 createRef 把 ref 对象直接暴露出去，如果这样每一次函数组件执行就会重新声明 Ref，此时 ref 就会随着函数组件执行被重置，这就解释了在函数组件中为什么不能用 createRef 的原因。
+
+为了解决这个问题，hooks 和函数组件对应的 fiber 对象建立起关联，将 useRef 产生的 ref 对象挂到函数组件对应的 fiber 上，函数组件每次执行，只要组件不被销毁，函数组件对应的 fiber 对象一直存在，所以 ref 等信息就会被保存下来。
+
+
+
+### React对Ref属性的处理-标记ref
+
+- **① Ref属性是一个字符串。**
+
+  ```jsx
+  class Demo extends React.Component{
+      public componentDidMount(){
+         console.log(this.refs); // {currentDom: XX, currentComInstance: XX}
+      }
+      public render() {
+        return <div>
+          <div ref="currentDom" >字符串模式获取元素或组件</div>
+          <Children ref="currentComInstance" />
+      </div>
+      }
+  }
+  ```
+
+- **② Ref 属性是一个函数。**
+
+  ```jsx
+  class Demo extends React.Component{
+      public currentDom = null
+      public currentComponentInstance = null
+      public componentDidMount(){
+          console.log(this.currentDom)
+          console.log(this.currentComponentInstance)
+      }
+      public render() {
+        return <div>
+          		<div ref={(node)=> this.currentDom = node }  >Ref模式获取元素或组件</div>
+          		<Children ref={(node) => this.currentComponentInstance = node  }  />
+      		</div>
+      }
+  }
+  ```
+
++ **③ Ref属性是一个ref对象。**
+
+  ```jsx
+  class Demo extends React.Component{
+      public currentDom = React.createRef(null)
+      public currentComponentInstance = React.createRef(null)
+      public componentDidMount(){
+          console.log(this.currentDom)
+          console.log(this.currentComponentInstance)
+      }
+      public render() {
+        return <div>
+           <div ref={ this.currentDom }  >Ref对象模式获取元素或组件</div>
+          <Children ref={ this.currentComponentInstance }  />
+    	 </div>
+      }
+  }
+  ```
+
+  
+
+### ref高阶用法
+
+#### 1 forwardRef 转发 Ref
+
+forwardRef 的初衷就是解决 ref 不能跨层级捕获和传递的问题。 forwardRef 接受了父级元素标记的 ref 信息，并把它转发下去，使得子组件可以通过 props 来接受到上一层级或者是更上层级的ref
+
+**① 场景一：跨层级获取**
+
+比如想要通过标记子组件 ref ，来获取孙组件的某一 DOM 元素，或者是组件实例。
+
+> 场景：想要在 GrandFather 组件通过标记 ref ，来获取孙组件 Son 的组件实例。
+
+```jsx
+// 孙组件
+function Son (props){
+    const { grandRef } = props
+    return <div>
+        <div> i am alien </div>
+        <span ref={grandRef} >这个是想要获取元素</span>
+    </div>
+}
+// 父组件
+class Father extends React.Component{
+    constructor(props){
+        super(props)
+    }
+    render(){
+        return <div>
+            <Son grandRef={this.props.grandRef}  />
+        </div>
+    }
+}
+const NewFather = React.forwardRef((props,ref)=> <Father grandRef={ref}  {...props} />)
+// 爷组件
+class GrandFather extends React.Component{
+    constructor(props){
+        super(props)
+    }
+    node = null 
+    componentDidMount(){
+        console.log(this.node) // span #text 这个是想要获取元素
+    }
+    render(){
+        return <div>
+            <NewFather ref={(node)=> this.node = node } />
+        </div>
+    }
+}
+```
+
+**② 场景二:合并转发ref**
+
+通过 forwardRef 转发的 ref 不要理解为只能用来直接获取组件实例，DOM 元素，也可以用来传递合并之后的自定义的 ref 
+
+> 场景：想通过Home绑定ref，来获取子组件Index的实例index，dom元素button，以及孙组件Form的实例
+
+```jsx
+// 表单组件
+class Form extends React.Component{
+    render(){
+       return <div>{...}</div>
+    }
+}
+// index 组件
+class Index extends React.Component{ 
+    componentDidMount(){
+        const { forwardRef } = this.props
+        forwardRef.current={
+            form:this.form,      // 给form组件实例 ，绑定给 ref form属性 
+            index:this,          // 给index组件实例 ，绑定给 ref index属性 
+            button:this.button,  // 给button dom 元素，绑定给 ref button属性 
+        }
+    }
+    form = null
+    button = null
+    render(){
+        return <div   > 
+          <button ref={(button)=> this.button = button }  >点击</button>
+          <Form  ref={(form) => this.form = form }  />  
+      </div>
+    }
+}
+const ForwardRefIndex = React.forwardRef(( props,ref )=><Index  {...props} forwardRef={ref}  />)
+// home 组件
+export default function Home(){
+    const ref = useRef(null)
+     useEffect(()=>{
+         console.log(ref.current)
+     },[])
+    return <ForwardRefIndex ref={ref} />
+}
+```
+
+**③ 场景三：高阶组件转发**
+
+如果通过高阶组件包裹一个原始类组件，就会产生一个问题，如果高阶组件 HOC 没有处理 ref ，那么由于高阶组件本身会返回一个新组件，所以当使用 HOC 包装后组件的时候，标记的 ref 会指向 HOC 返回的组件，而并不是 HOC 包裹的原始类组件，为了解决这个问题，forwardRef 可以对 HOC 做一层处理。
+
+```jsx
+function HOC(Component){
+  class Wrap extends React.Component{
+     render(){
+        const { forwardedRef ,...otherprops  } = this.props
+        return <Component ref={forwardedRef}  {...otherprops}  />
+     }
+  }
+  return  React.forwardRef((props,ref)=> <Wrap forwardedRef={ref} {...props} /> ) 
+}
+class Index extends React.Component{
+  render(){
+    return <div>hello,world</div>
+  }
+}
+const HocIndex =  HOC(Index)
+export default ()=>{
+  const node = useRef(null)
+  useEffect(()=>{
+    console.log(node.current)  /* Index 组件实例  */ 
+  },[])
+  return <div><HocIndex ref={node}  /></div>
+}
+```
+
+
+
+
+
 ## 问与答
 
 + 问：老版本的 React 中，为什么写 jsx 的文件要默认引入 React?
