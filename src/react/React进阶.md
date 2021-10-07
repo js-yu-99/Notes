@@ -693,6 +693,8 @@ componentWillUnmount 是组件销毁阶段唯一执行的生命周期，主要�
 
 #### 1 useEffect 和 useLayoutEffect
 
+**useEffect**
+
 ```js
 useEffect(()=>{
     return destory
@@ -703,7 +705,96 @@ useEffect 第一个参数 callback, 返回的 destory ， destory 作为下一�
 
 第二个参数作为依赖项，是一个数组，可以有多个依赖项，依赖项改变，执行上一次callback 返回的 destory ，和执行新的 effect 第一个参数 callback 。
 
+```js
+useEffect(() => {
+  console.log(1);
+  return () => {
+    console.log(2);
+  };
+});
+useEffect(() => {
+  console.log(3);
+  return () => {
+    console.log(4);
+  };
+});
+// 2 4 1 3
+```
 
+对于 useEffect 执行， React 处理逻辑是采用异步调用 ，对于每一个 effect 的 callback， React 会向 `setTimeout`回调函数一样，放入任务队列，等到主线程任务完成，DOM 更新，js 执行完成，视图绘制完毕，才执行。所以 effect 回调函数不会阻塞浏览器绘制视图。
+
+**useLayoutEffect**
+
+useLayoutEffect 和 useEffect 不同的地方是采用了同步执行，那么和useEffect有什么区别呢？
+
+- 首先 useLayoutEffect 是在DOM 绘制之前，这样可以方便修改 DOM ，这样浏览器只会绘制一次，如果修改 DOM 布局放在 useEffect ，那 useEffect 执行是在浏览器绘制视图之后，接下来又改 DOM ，就可能会导致浏览器再次回流和重绘。而且由于两次绘制，视图上可能会造成闪现突兀的效果。
+- useLayoutEffect callback 中代码执行会阻塞浏览器绘制。
+
+**一句话概括如何选择 useEffect 和 useLayoutEffect ：修改 DOM ，改变布局就用 useLayoutEffect ，其他情况就用 useEffect 。**
+
+
+
+#### 2 componentDidMount 替代方案
+
+```js
+React.useEffect(()=>{
+    /* 请求数据 ， 事件监听 ， 操纵dom */
+},[])  /* dep = [] */
+```
+
+这样当前 effect 没有任何依赖项，也就只有初始化执行一次。
+
+- `componentDidMount()`完全等价于`useLayoutEffect( fn , [ ] )`，但是不等价于`useEffect( fn , [ ] )`。
+
+#### 3 componentWillUnmount 替代方案
+
+```js
+React.useEffect(()=>{
+  /* 请求数据 ， 事件监听 ， 操纵dom ， 增加定时器，延时器 */
+  return function componentWillUnmount(){
+    /* 解除事件监听器 ，清除定时器，延时器 */
+  }
+},[])/* dep = [] */
+```
+
+在 componentDidMount 的前提下，useEffect 第一个函数的返回函数，可以作为 componentWillUnmount 使用。
+
+#### 4 componentWillReceiveProps 代替方案
+
+说 useEffect 代替 componentWillReceiveProps 着实有点牵强。
+
+- 首先因为二者的执行阶段根本不同，一个是在render阶段，一个是在commit阶段。
+- 其次 **useEffect 会初始化执行一次**，但是 componentWillReceiveProps 只有组件更新 props 变化的时候才会执行。
+
+```js
+React.useEffect(()=>{
+    console.log('props变化：componentWillReceiveProps')
+},[ props ])
+```
+
+此时依赖项就是 props，props 变化，执行此时的 useEffect 钩子。
+
+```js
+React.useEffect(()=>{
+    console.log('props中number变化：componentWillReceiveProps')
+},[ props.number ]) /* 当前仅当 props中number变化，执行当前effect钩子 */
+```
+
+useEffect 还可以针对 props 的某一个属性进行追踪。此时的依赖项为 props 的追踪属性。如上述代码，只有 props 中 number 变化，执行 effect 。
+
+#### 5 componentDidUpdate 替代方案
+
+useEffect 和 componentDidUpdate 在执行时期虽然有点差别，useEffect 是异步执行，componentDidUpdate 是同步执行 ，但都是在 commit 阶段 。但是向上面所说 useEffect 会默认执行一次，而 componentDidUpdate 只有在组件更新完成后执行。
+
+```js
+React.useEffect(()=>{
+    console.log('组件更新完成：componentDidUpdate ')     
+}) /* 没有 dep 依赖项 */
+```
+
+注意此时useEffect没有第二个参数。
+
+没有第二个参数，那么每一次执行函数组件，都会执行该 effect。
 
 
 
@@ -733,4 +824,8 @@ useEffect 第一个参数 callback, 返回的 destory ， destory 作为下一�
 
 + 问：当 props 不变的前提下， PureComponent 组件能否阻止 componentWillReceiveProps 执行？
   + 答案是否定的，componentWillReceiveProps 生命周期的执行，和纯组件没有关系，纯组件是在 componentWillReceiveProps 执行之后浅比较 props 是否发生变化。所以 PureComponent 下不会阻止该生命周期的执行。
+
++ 问：React.useEffect 回调函数 和 componentDidMount / componentDidUpdate 执行时机有什么区别 ？
+
+  答：useEffect 对 React 执行栈来看是异步执行的，而 componentDidMount / componentDidUpdate 是同步执行的，useEffect代码不会阻塞浏览器绘制。在时机上 ，componentDidMount / componentDidUpdate 和 useLayoutEffect 更类似。
 
