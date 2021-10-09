@@ -373,6 +373,92 @@ export function reconcileChildren(
 
 ![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1632874736160-235ed54e-c263-4a58-844e-ebe2dc72f82f.png)
 
+
+
+#### mount
+
+```js
+// mount时：根据tag不同，创建不同的Fiber节点
+switch (workInProgress.tag) {
+  case IndeterminateComponent: 
+    // ...省略
+  case LazyComponent: 
+    // ...省略
+  case FunctionComponent: 
+    // ...省略
+  case ClassComponent: 
+    // ...省略
+  case HostRoot:
+    // ...省略
+  case HostComponent:
+    // ...省略
+  case HostText:
+    // ...省略
+  // ...省略其他类型
+}
+```
+
+#### update
+
+满足如下情况时`didReceiveUpdate === false`（即可以直接复用前一次更新的`子Fiber`，不需要新建`子Fiber`）
+
+1. `oldProps === newProps && workInProgress.type === current.type`，即`props`与`fiber.type`不变
+2. `!includesSomeLane(renderLanes, updateLanes)`，即当前`Fiber节点`优先级不够
+
+```js
+if (current !== null) {
+    const oldProps = current.memoizedProps;
+    const newProps = workInProgress.pendingProps;
+
+    if (
+      oldProps !== newProps ||
+      hasLegacyContextChanged() ||
+      (__DEV__ ? workInProgress.type !== current.type : false)
+    ) {
+      didReceiveUpdate = true;
+    } else if (!includesSomeLane(renderLanes, updateLanes)) {
+      didReceiveUpdate = false;
+      switch (workInProgress.tag) {
+        // 省略处理
+      }
+      return bailoutOnAlreadyFinishedWork(
+        current,
+        workInProgress,
+        renderLanes,
+      );
+    } else {
+      didReceiveUpdate = false;
+    }
+  } else {
+    didReceiveUpdate = false;
+  }
+```
+
+#### effectTag
+
+`render阶段`的工作是在内存中进行，当工作结束后会通知`Renderer`需要执行的`DOM`操作。要执行`DOM`操作的具体类型就保存在`fiber.effectTag`中。
+
+```js
+// DOM需要插入到页面中
+export const Placement = /*                */ 0b00000000000010;
+// DOM需要更新
+export const Update = /*                   */ 0b00000000000100;
+// DOM需要插入到页面中并更新
+export const PlacementAndUpdate = /*       */ 0b00000000000110;
+// DOM需要删除
+export const Deletion = /*                 */ 0b00000000001000;
+...
+```
+
+> 通过二进制表示`effectTag`，可以方便的使用位操作为`fiber.effectTag`赋值多个`effect`。
+
+那么，如果要通知`Renderer`将`Fiber节点`对应的`DOM节点`插入页面中，需要满足两个条件：
+
+1. `fiber.stateNode`存在，即`Fiber节点`中保存了对应的`DOM节点`
+2. `(fiber.effectTag & Placement) !== 0`，即`Fiber节点`存在`Placement effectTag`
+
+
+
 ### completeWork
 
 ```js
@@ -488,7 +574,7 @@ if (
 - 处理`DANGEROUSLY_SET_INNER_HTML prop`
 - 处理`children prop`
 
-我们去掉一些当前不需要关注的功能（比如`ref`）。可以看到最主要的逻辑是调用`updateHostComponent`方法。
+最主要的逻辑是调用`updateHostComponent`方法。
 
 ```js
 if (current !== null && workInProgress.stateNode != null) {
@@ -511,7 +597,21 @@ workInProgress.updateQueue = (updatePayload: any);
 
 其中`updatePayload`为数组形式，他的偶数索引的值为变化的`prop key`，奇数索引的值为变化的`prop value`。
 
+#### effectList
 
+作为`DOM`操作的依据，`commit阶段`需要找到所有有`effectTag`的`Fiber节点`并依次执行`effectTag`对应操作。难道需要在`commit阶段`再遍历一次`Fiber树`寻找`effectTag !== null`的`Fiber节点`么？？？
+
+> 为了解决这个问题，在`completeWork`的上层函数`completeUnitOfWork`中，每个执行完`completeWork`且存在`effectTag`的`Fiber节点`会被保存在一条被称为`effectList`的单向链表中。
+>
+> `effectList`中第一个`Fiber节点`保存在`fiber.firstEffect`，最后一个元素保存在`fiber.lastEffect`。
+>
+> 类似`appendAllChildren`，在“归”阶段，所有有`effectTag`的`Fiber节点`都会被追加在`effectList`中，最终形成一条以`rootFiber.firstEffect`为起点的单向链表。
+>
+> 这样，在`commit阶段`只需要遍历`effectList`就能执行所有`effect`了。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633739447486-482e22dd-6673-4aad-b421-0bf1f9587e22.png)
+
+## commit阶段
 
 `Renderer`工作的阶段被称为`commit`阶段。`commit`阶段可以分为三个子阶段：
 
