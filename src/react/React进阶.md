@@ -1266,6 +1266,12 @@ export class RefDemo extends React.PureComponent<any, any> {
 
   会更新 ref 对象的 current 属性。达到更新 ref 对象的目的。
 
+### Ref 的处理特性
+
+
+
+
+
 
 
 ## 问与答
