@@ -613,11 +613,156 @@ workInProgress.updateQueue = (updatePayload: any);
 
 ## commit阶段
 
+`commitRoot`方法是`commit阶段`工作的起点。`fiberRootNode`会作为传参。
+
+在`rootFiber.firstEffect`上保存了一条需要执行`副作用`的`Fiber节点`的单向链表`effectList`，这些`Fiber节点`的`updateQueue`中保存了变化的`props`。
+
+这些`副作用`对应的`DOM操作`在`commit`阶段执行。
+
+除此之外，一些生命周期钩子（比如`componentDidXXX`）、`hook`（比如`useEffect`）需要在`commit`阶段执行。
+
 `Renderer`工作的阶段被称为`commit`阶段。`commit`阶段可以分为三个子阶段：
 
 - before mutation阶段（执行`DOM`操作前）
 - mutation阶段（执行`DOM`操作）
 - layout阶段（执行`DOM`操作后）
+
+```js
+function commitRoot(root) {
+  var renderPriorityLevel = getCurrentPriorityLevel();
+  runWithPriority$1(ImmediatePriority$1, commitRootImpl.bind(null, root, renderPriorityLevel));
+  return null;
+}
+```
+
+`commitRoot`函数真正执行的是`commitRootImpl`方法
+
+### 整体流程
+
+#### before mutation之前
+
+`commitRootImpl`方法中直到第一句`if (firstEffect !== null)`之前属于`before mutation`之前。
+
+```js
+do {
+    // 触发useEffect回调与其他同步任务。由于这些任务可能触发新的渲染，所以这里要一直遍历执行直到没有任务
+    flushPassiveEffects();
+  } while (rootWithPendingPassiveEffects !== null);
+
+  // root指 fiberRootNode
+  // root.finishedWork指当前应用的rootFiber
+  const finishedWork = root.finishedWork;
+
+  // 凡是变量名带lane的都是优先级相关
+  const lanes = root.finishedLanes;
+  if (finishedWork === null) {
+    return null;
+  }
+  root.finishedWork = null;
+  root.finishedLanes = NoLanes;
+
+  // 重置Scheduler绑定的回调函数
+  root.callbackNode = null;
+  root.callbackId = NoLanes;
+
+  let remainingLanes = mergeLanes(finishedWork.lanes, finishedWork.childLanes);
+  // 重置优先级相关变量
+  markRootFinished(root, remainingLanes);
+
+  // 清除已完成的discrete updates，例如：用户鼠标点击触发的更新。
+  if (rootsWithPendingDiscreteUpdates !== null) {
+    if (
+      !hasDiscreteLanes(remainingLanes) &&
+      rootsWithPendingDiscreteUpdates.has(root)
+    ) {
+      rootsWithPendingDiscreteUpdates.delete(root);
+    }
+  }
+
+  // 重置全局变量
+  if (root === workInProgressRoot) {
+    workInProgressRoot = null;
+    workInProgress = null;
+    workInProgressRootRenderLanes = NoLanes;
+  } else {
+  }
+
+  // 将effectList赋值给firstEffect
+  // 由于每个fiber的effectList只包含他的子孙节点
+  // 所以根节点如果有effectTag则不会被包含进来
+  // 所以这里将有effectTag的根节点插入到effectList尾部
+  // 这样才能保证有effect的fiber都在effectList中
+  let firstEffect;
+  if (finishedWork.effectTag > PerformedWork) {
+    if (finishedWork.lastEffect !== null) {
+      finishedWork.lastEffect.nextEffect = finishedWork;
+      firstEffect = finishedWork.firstEffect;
+    } else {
+      firstEffect = finishedWork;
+    }
+  } else {
+    // 根节点没有effectTag
+    firstEffect = finishedWork.firstEffect;
+  }
+```
+
+可以看到，`before mutation`之前主要做一些变量赋值，状态重置的工作。
+
+#### layout之后
+
+```js
+const rootDidHavePassiveEffects = rootDoesHavePassiveEffects;
+
+// useEffect相关
+if (rootDoesHavePassiveEffects) {
+  rootDoesHavePassiveEffects = false;
+  rootWithPendingPassiveEffects = root;
+  pendingPassiveEffectsLanes = lanes;
+  pendingPassiveEffectsRenderPriority = renderPriorityLevel;
+} else {}
+
+// 性能优化相关
+if (remainingLanes !== NoLanes) {
+  if (enableSchedulerTracing) {
+    // ...
+  }
+} else {
+  // ...
+}
+
+// 性能优化相关
+if (enableSchedulerTracing) {
+  if (!rootDidHavePassiveEffects) {
+    // ...
+  }
+}
+
+// ...检测无限循环的同步任务
+if (remainingLanes === SyncLane) {
+  // ...
+} 
+
+// 在离开commitRoot函数前调用，触发一次新的调度，确保任何附加的任务被调度
+ensureRootIsScheduled(root, now());
+
+// ...处理未捕获错误及老版本遗留的边界问题
+
+
+// 执行同步任务，这样同步任务不需要等到下次事件循环再执行
+// 比如在 componentDidMount 中执行 setState 创建的更新会在这里被同步执行
+// 或useLayoutEffect
+flushSyncCallbackQueue();
+
+return null;
+```
+
+主要包括三点内容：
+
+1. `useEffect`相关的处理。
+2. 性能追踪相关。
+3. 在`commit`阶段会触发一些生命周期钩子（如 `componentDidXXX`）和`hook`（如`useLayoutEffect`、`useEffect`）。
+
+### before mutation阶段
 
 ```js
 // 保存之前的优先级，以同步优先级执行，执行完毕后恢复之前优先级
@@ -637,6 +782,129 @@ commitBeforeMutationEffects(finishedWork);
 
 focusedInstanceHandle = null;
 ```
+
+#### commitBeforeMutationEffects
+
+```js
+function commitBeforeMutationEffects() {
+  while (nextEffect !== null) {
+    const current = nextEffect.alternate;
+
+    if (!shouldFireAfterActiveInstanceBlur && focusedInstanceHandle !== null) {
+      // ...focus blur相关
+    }
+
+    const effectTag = nextEffect.effectTag;
+
+    // 调用getSnapshotBeforeUpdate
+    if ((effectTag & Snapshot) !== NoEffect) {
+      commitBeforeMutationEffectOnFiber(current, nextEffect);
+    }
+
+    // 调度useEffect
+    if ((effectTag & Passive) !== NoEffect) {
+      if (!rootDoesHavePassiveEffects) {
+        rootDoesHavePassiveEffects = true;
+        scheduleCallback(NormalSchedulerPriority, () => {
+          flushPassiveEffects();
+          return null;
+        });
+      }
+    }
+    nextEffect = nextEffect.nextEffect;
+  }
+}
+```
+
+整体可以分为三部分：
+
+1. 处理`DOM节点`渲染/删除后的 `autoFocus`、`blur` 逻辑。
+2. 调用`getSnapshotBeforeUpdate`生命周期钩子。
+3. 调度`useEffect`。
+
+#### 调用getSnapshotBeforeUpdate
+
+`commitBeforeMutationEffectOnFiber`是`commitBeforeMutationLifeCycles`的别名。
+
+在该方法内会调用`getSnapshotBeforeUpdate`。
+
+```js
+function commitBeforeMutationLifeCycles(current, finishedWork) {
+	switch (finishedWork.tag) {
+      // ...
+    case ClassComponent:
+        {
+          if (finishedWork.flags & Snapshot) {
+            if (current !== null) {
+              var prevProps = current.memoizedProps;
+              var prevState = current.memoizedState;
+              var instance = finishedWork.stateNode;
+              // ...
+              var snapshot = instance.getSnapshotBeforeUpdate(finishedWork.elementType === finishedWork.type ? prevProps : resolveDefaultProps(finishedWork.type, prevProps), prevState);
+              // ...
+              instance.__reactInternalSnapshotBeforeUpdate = snapshot;
+            }
+          }
+          return;
+        }
+  }
+  // ...
+}
+```
+
+从`React`v16开始，`componentWillXXX`钩子前增加了`UNSAFE_`前缀。
+
+究其原因，是因为`Stack Reconciler`重构为`Fiber Reconciler`后，`render阶段`的任务可能中断/重新开始，对应的组件在`render阶段`的生命周期钩子（即`componentWillXXX`）可能触发多次。
+
+这种行为和`React`v15不一致，所以标记为`UNSAFE_`。
+
+为此，`React`提供了替代的生命周期钩子`getSnapshotBeforeUpdate`。
+
+`getSnapshotBeforeUpdate`是在`commit阶段`内的`before mutation阶段`调用的，由于`commit阶段`是同步的，所以不会遇到多次调用的问题。
+
+#### 调度`useEffect`
+
+```js
+// 调度useEffect
+if ((effectTag & Passive) !== NoEffect) {
+  if (!rootDoesHavePassiveEffects) {
+    rootDoesHavePassiveEffects = true;
+    scheduleCallback(NormalSchedulerPriority, () => {
+      // 触发useEffect
+      flushPassiveEffects();
+      return null;
+    });
+  }
+}
+```
+
+**如何异步调度**
+
+在`flushPassiveEffects`方法内部会从全局变量`rootWithPendingPassiveEffects`获取`effectList`。
+
+effect副作用包括:
+
+- 插入`DOM节点`（Placement）
+- 更新`DOM节点`（Update）
+- 删除`DOM节点`（Deletion）
+
+除此外，当一个`FunctionComponent`含有`useEffect`或`useLayoutEffect`，他对应的`Fiber节点`也会被赋值`effectTag`。
+
+在`flushPassiveEffects`方法内部会遍历`rootWithPendingPassiveEffects`（即`effectList`）执行`effect`回调函数。
+
+整个`useEffect`异步调用分为三步：
+
+1. `before mutation阶段`在`scheduleCallback`中调度`flushPassiveEffects`
+2. `layout阶段`之后将`effectList`赋值给`rootWithPendingPassiveEffects`
+3. `scheduleCallback`触发`flushPassiveEffects`，`flushPassiveEffects`内部遍历`rootWithPendingPassiveEffects`
+
+**为什么需要异步调用**
+
+> 与 componentDidMount、componentDidUpdate 不同的是，在浏览器完成布局与绘制之后，传给 useEffect 的函数会延迟调用。这使得它适用于许多常见的副作用场景，比如设置订阅和事件处理等情况，因此不应在函数中执行阻塞浏览器更新屏幕的操作。
+
+`useEffect`异步执行的原因主要是防止同步执行时阻塞浏览器渲染。
+
+
 
 
 
