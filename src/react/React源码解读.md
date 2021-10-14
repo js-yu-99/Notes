@@ -906,7 +906,203 @@ effect副作用包括:
 
 
 
+### mutation阶段
 
+类似`before mutation阶段`，`mutation阶段`也是遍历`effectList`，执行函数。这里执行的是`commitMutationEffects`。
+
+```js
+nextEffect = firstEffect;
+do {
+  try {
+      commitMutationEffects(root, renderPriorityLevel);
+    } catch (error) {
+      invariant(nextEffect !== null, 'Should be working on an effect.');
+      captureCommitPhaseError(nextEffect, error);
+      nextEffect = nextEffect.nextEffect;
+    }
+} while (nextEffect !== null);
+```
+
+#### commitMutationEffects
+
+```js
+function commitMutationEffects(root: FiberRoot, renderPriorityLevel) {
+  // 遍历effectList
+  while (nextEffect !== null) {
+
+    const effectTag = nextEffect.effectTag;
+
+    // 根据 ContentReset effectTag重置文字节点
+    if (effectTag & ContentReset) {
+      commitResetTextContent(nextEffect);
+    }
+
+    // 更新ref
+    if (effectTag & Ref) {
+      const current = nextEffect.alternate;
+      if (current !== null) {
+        commitDetachRef(current);
+      }
+    }
+
+    // 根据 effectTag 分别处理
+    const primaryEffectTag =
+      effectTag & (Placement | Update | Deletion | Hydrating);
+    switch (primaryEffectTag) {
+      // 插入DOM
+      case Placement: {
+        commitPlacement(nextEffect);
+        nextEffect.effectTag &= ~Placement;
+        break;
+      }
+      // 插入DOM 并 更新DOM
+      case PlacementAndUpdate: {
+        // 插入
+        commitPlacement(nextEffect);
+
+        nextEffect.effectTag &= ~Placement;
+
+        // 更新
+        const current = nextEffect.alternate;
+        commitWork(current, nextEffect);
+        break;
+      }
+      // SSR
+      case Hydrating: {
+        nextEffect.effectTag &= ~Hydrating;
+        break;
+      }
+      // SSR
+      case HydratingAndUpdate: {
+        nextEffect.effectTag &= ~Hydrating;
+
+        const current = nextEffect.alternate;
+        commitWork(current, nextEffect);
+        break;
+      }
+      // 更新DOM
+      case Update: {
+        const current = nextEffect.alternate;
+        commitWork(current, nextEffect);
+        break;
+      }
+      // 删除DOM
+      case Deletion: {
+        commitDeletion(root, nextEffect, renderPriorityLevel);
+        break;
+      }
+    }
+
+    nextEffect = nextEffect.nextEffect;
+  }
+}
+```
+
+`commitMutationEffects`会遍历`effectList`，对每个`Fiber节点`执行如下三个操作：
+
+1. 根据`ContentReset effectTag`重置文字节点
+2. 更新`ref`
+3. 根据`effectTag`分别处理，其中`effectTag`包括(`Placement` | `Update` | `Deletion` | `Hydrating`)
+
+#### Placement effect
+
+当`Fiber节点`含有`Placement effectTag`，意味着该`Fiber节点`对应的`DOM节点`需要插入到页面中。
+
+调用的方法为`commitPlacement`。
+
+该方法所做的工作分为三步：
+
+1. 获取父级`DOM节点`。其中`finishedWork`为传入的`Fiber节点`。
+
+```js
+const parentFiber = getHostParentFiber(finishedWork);
+// 父级DOM节点
+const parentStateNode = parentFiber.stateNode;
+```
+
+1. 获取`Fiber节点`的`DOM`兄弟节点
+
+```js
+const before = getHostSibling(finishedWork);
+```
+
+1. 根据`DOM`兄弟节点是否存在决定调用`parentNode.insertBefore`或`parentNode.appendChild`执行`DOM`插入操作。
+
+```js
+// parentStateNode是否是rootFiber
+if (isContainer) {
+  insertOrAppendPlacementNodeIntoContainer(finishedWork, before, parent);
+} else {
+  insertOrAppendPlacementNode(finishedWork, before, parent);
+}
+```
+
+值得注意的是，`getHostSibling`（获取兄弟`DOM节点`）的执行很耗时，当在同一个父`Fiber节点`下依次执行多个插入操作，`getHostSibling`算法的复杂度为指数级。
+
+这是由于`Fiber节点`不只包括`HostComponent`，所以`Fiber树`和渲染的`DOM树`节点并不是一一对应的。要从`Fiber节点`找到`DOM节点`很可能跨层级遍历。
+
+#### Update effect
+
+当`Fiber节点`含有`Update effectTag`，意味着该`Fiber节点`需要更新。调用的方法为`commitWork`，他会根据`Fiber.tag`分别处理。
+
+**FunctionComponent mutation**
+
+当`fiber.tag`为`FunctionComponent`，会调用`commitHookEffectListUnmount`。该方法会遍历`effectList`，执行所有`useLayoutEffect hook`的销毁函数。
+
+```js
+var firstEffect = lastEffect.next;
+var effect = firstEffect;
+
+do {
+  if ((effect.tag & tag) === tag) {
+    // Unmount
+    var destroy = effect.destroy;
+    effect.destroy = undefined;
+
+    if (destroy !== undefined) {
+      destroy();
+    }
+  }
+
+  effect = effect.next;
+} while (effect !== firstEffect);
+```
+
+
+
+**HostComponent mutation**
+
+当`fiber.tag`为`HostComponent`，会调用`commitUpdate`。
+
+最终会在`updateDOMProperties`中将`render阶段 completeWork`中为`Fiber节点`赋值的`updateQueue`对应的内容渲染在页面上。
+
+#### Deletion effect
+
+当`Fiber节点`含有`Deletion effectTag`，意味着该`Fiber节点`对应的`DOM节点`需要从页面中删除。调用的方法为`commitDeletion`。
+
+该方法会执行如下操作：
+
+1. 递归调用`Fiber节点`及其子孙`Fiber节点`中`fiber.tag`为`ClassComponent`的`componentWillUnmount`生命周期钩子，从页面移除`Fiber节点`对应`DOM节点`
+2. 解绑`ref`
+3. 调度`useEffect`的销毁函数
+
+
+
+### layout阶段
+
+```js
+root.current = finishedWork;
+```
+
+`workInProgress Fiber树`在`commit阶段`完成渲染后会变为`current Fiber树`。这行代码的作用就是切换`fiberRootNode`指向的`current Fiber树`。
+
+那么这行代码为什么在这里呢？（在`mutation阶段`结束后，`layout阶段`开始前。）
+
+> 因为`componentWillUnmount`发生在`commitMutationEffects`函数中，这时还可以获取之前的Update，而`componentDidMount`和`componentDidUpdate`会在`commitLayoutEffects`中执行，这时已经可以获取更新后的真实dom了
+
+我们知道`componentWillUnmount`会在`mutation阶段`执行。此时`current Fiber树`还指向前一次更新的`Fiber树`，在生命周期钩子内获取的`DOM`还是更新前的。
+
+`componentDidMount`和`componentDidUpdate`会在`layout阶段`执行。此时`current Fiber树`已经指向更新后的`Fiber树`，在生命周期钩子内获取的`DOM`就是更新后的。
 
 
 
