@@ -1104,6 +1104,112 @@ root.current = finishedWork;
 
 `componentDidMount`和`componentDidUpdate`会在`layout阶段`执行。此时`current Fiber树`已经指向更新后的`Fiber树`，在生命周期钩子内获取的`DOM`就是更新后的。
 
+----
+
+> 该阶段之所以称为`layout`，因为该阶段的代码都是在`DOM`渲染完成（`mutation阶段`完成）后执行的。
+>
+> 该阶段触发的生命周期钩子和`hook`可以直接访问到已经改变后的`DOM`，即该阶段是可以参与`DOM layout`的阶段。
+
+#### 执行commitLayoutEffects函数
+
+```js
+function commitLayoutEffects(root: FiberRoot, committedLanes: Lanes) {
+  while (nextEffect !== null) {
+    const effectTag = nextEffect.effectTag;
+
+    // 调用生命周期钩子和hook
+    if (effectTag & (Update | Callback)) {
+      const current = nextEffect.alternate;
+      commitLayoutEffectOnFiber(root, current, nextEffect, committedLanes);
+    }
+
+    // 赋值ref
+    if (effectTag & Ref) {
+      commitAttachRef(nextEffect);
+    }
+
+    nextEffect = nextEffect.nextEffect;
+  }
+}
+```
+
+`commitLayoutEffects`一共做了两件事：
+
+1. commitLayoutEffectOnFiber（**commitLifeCycles**）（调用`生命周期钩子`和`hook`相关操作）
+2. commitAttachRef（赋值 ref）
+
+#### commitLifeCycles
+
+`commitLifeCycles`方法会根据`fiber.tag`对不同类型的节点分别处理。
+
+- 对于`ClassComponent`，他会通过`current === null?`区分是`mount`还是`update`，调用`componentDidMount`或`componentDidUpdate`。触发`状态更新`的`this.setState`如果赋值了第二个参数`回调函数`，也会在此时调用。
+- 对于`FunctionComponent`及相关类型，他会调用`useLayoutEffect hook`的`回调函数`，调度`useEffect`的`销毁`与`回调`函数
+
+```js
+switch (finishedWork.tag) {
+    // 以下都是FunctionComponent及相关类型
+  case FunctionComponent:
+  case ForwardRef:
+  case SimpleMemoComponent:
+  case Block: {
+    // 执行useLayoutEffect的回调函数
+    commitHookEffectListMount(HookLayout | HookHasEffect, finishedWork);
+    // 调度useEffect的销毁函数与回调函数
+    schedulePassiveEffects(finishedWork);
+    return;
+ }
+```
+
+`useLayoutEffect hook`从上一次更新的`销毁函数`调用到本次更新的`回调函数`调用是同步执行的。而`useEffect`则需要先调度，在`Layout阶段`完成后再异步执行。这就是`useLayoutEffect`与`useEffect`的区别。
+
+- 对于`HostRoot`，即`rootFiber`，如果赋值了第三个参数`回调函数`，也会在此时调用。
+
+```js
+ReactDOM.render(<App />, document.querySelector("#root"), function() {
+  console.log("i am mount~");
+});
+```
+
+#### commitAttachRef
+
+```js
+function commitAttachRef(finishedWork: Fiber) {
+  const ref = finishedWork.ref;
+  if (ref !== null) {
+    const instance = finishedWork.stateNode;
+
+    // 获取DOM实例
+    let instanceToUse;
+    switch (finishedWork.tag) {
+      case HostComponent:
+        instanceToUse = getPublicInstance(instance);
+        break;
+      default:
+        instanceToUse = instance;
+    }
+
+    if (typeof ref === "function") {
+      // 如果ref是函数形式，调用回调函数
+      ref(instanceToUse);
+    } else {
+      // 如果ref是ref实例形式，赋值ref.current
+      ref.current = instanceToUse;
+    }
+  }
+}
+```
+
+
+
+| useEffect                                   | useLayoutEffect |
+| ------------------------------------------- | --------------- |
+| beforeMutation阶段：调度flushPassiveEffects | 无 |
+| mutation阶段：无 | 执行destroy |
+| layout阶段：注册destroy | 执行create |
+| commit阶段完成后：执行flushPassiveEffects，内部执行注册的回调 | 无 |
+
+
+
 
 
 ## diff算法
