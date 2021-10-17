@@ -1102,173 +1102,257 @@ export class RefDemo extends React.PureComponent<any, any> {
 
 对于函数组件，本身是没有实例的，但是 React Hooks 提供了，useImperativeHandle 一方面第一个参数接受父组件传递的 ref 对象，另一方面第二个参数是一个函数，函数返回值，作为 ref 对象获取的内容。
 
-- useImperativeHandle 接受三个参数：
+useImperativeHandle 接受三个参数：
 
-  
++ 第一个参数 ref : 接受 forWardRef 传递过来的 ref 。
 
-  - 第一个参数 ref : 接受 forWardRef 传递过来的 ref 。
-  - 第二个参数 createHandle ：处理函数，返回值作为暴露给父组件的 ref 对象。
++ 第二个参数 createHandle ：处理函数，返回值作为暴露给父组件的 ref 对象。
 
-  - 第三个参数 deps :依赖项 deps，依赖项更改形成新的 ref 对象。
++ 第三个参数 deps :依赖项 deps，依赖项更改形成新的 ref 对象。
 
-  ![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633696235583-cb0b77c2-d7b9-4ea1-9a1b-7eee64abc4fe.png)
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633696235583-cb0b77c2-d7b9-4ea1-9a1b-7eee64abc4fe.png)
 
-  
 
-  ```
-  // 子组件
-  const Son = (props, ref) => {
-      const inputRef = useRef(null);
-      const [ inputValue , setInputValue ] = useState('');
-      useImperativeHandle(ref, () => {
-          const handleRefs = {
-              onFocus() {              /* 声明方法用于聚焦input框 */
-                  inputRef.current.focus();
-              },
-              onChangeValue(value) {   /* 声明方法用于改变input的值 */
-                  setInputValue(value);
-              }
-          };
-          return handleRefs;
-      }, []);
-      return <div>
-          <input placeholder="请输入内容"  ref={inputRef}  value={inputValue} />
-      </div>;
-  };
-  
-  const ForwarSon = React.forwardRef(Son);
-  
-  export class RefDemo extends React.PureComponent<any, any> {
-      public refDom = React.createRef();
-  
-      public handerClick() {
-          const { onFocus , onChangeValue } = this.refDom.current;
-          onFocus(); // 让子组件的输入框获取焦点
-          onChangeValue('let us learn React!'); // 让子组件input
-      }
-  
-      public render(): React.ReactNode {
-          console.log('render');
-          return (
-              <div>
-                  reco
-                  <ForwarSon ref={ this.refDom } />
-                  <button onClick={ () => {
-                      this.handerClick();
-                  } }>修改age</button>
-              </div>
-          );
-      }
-  }
-  ```
 
-  **3 函数组件缓存数据**
+```
+// 子组件
+const Son = (props, ref) => {
+    const inputRef = useRef(null);
+    const [ inputValue , setInputValue ] = useState('');
+    useImperativeHandle(ref, () => {
+        const handleRefs = {
+            onFocus() {              /* 声明方法用于聚焦input框 */
+                inputRef.current.focus();
+            },
+            onChangeValue(value) {   /* 声明方法用于改变input的值 */
+                setInputValue(value);
+            }
+        };
+        return handleRefs;
+    }, []);
+    return <div>
+        <input placeholder="请输入内容"  ref={inputRef}  value={inputValue} />
+    </div>;
+};
 
-  函数组件每一次 render ，函数上下文会重新执行，那么有一种情况就是，在执行一些事件方法改变数据或者保存新数据的时候，有没有必要更新视图，有没有必要把数据放到 state 中。如果视图层更新不依赖想要改变的数据，那么 state 改变带来的更新效果就是多余的。这时候更新无疑是一种性能上的浪费。
+const ForwarSon = React.forwardRef(Son);
 
-  这种情况下，useRef 就派上用场了，useRef 可以创建出一个 ref 原始对象，只要组件没有销毁，ref 对象就一直存在，那么完全可以把一些不依赖于视图更新的数据储存到 ref 对象中。这样做的好处有两个：
+export class RefDemo extends React.PureComponent<any, any> {
+    public refDom = React.createRef();
 
-  - 第一个能够直接修改数据，不会造成函数组件冗余的更新作用。
-  - 第二个 useRef 保存数据，如果有 useEffect ，useMemo 引用 ref 对象中的数据，无须将 ref 对象添加成 dep 依赖项，因为 useRef 始终指向一个内存空间，**所以这样一点好处是可以随时访问到变化后的值。**
+    public handerClick() {
+        const { onFocus , onChangeValue } = this.refDom.current;
+        onFocus(); // 让子组件的输入框获取焦点
+        onChangeValue('let us learn React!'); // 让子组件input
+    }
 
-  ### ref原理揭秘
+    public render(): React.ReactNode {
+        console.log('render');
+        return (
+            <div>
+                reco
+                <ForwarSon ref={ this.refDom } />
+                <button onClick={ () => {
+                    this.handerClick();
+                } }>修改age</button>
+            </div>
+        );
+    }
+}
+```
 
-  用回调函数方式处理 Ref ，**如果点击一次按钮，会打印几次 console.log ？**
+**3 函数组件缓存数据**
 
-  ```jsx
-  export class RefDemo extends React.PureComponent<any, any> {
-      public refDom = React.createRef();
-      public node = null;
-  
-      constructor() {
-          super();
-          this.state = {
-              num: 0
-          };
-      }
-  
-      public render(): React.ReactNode {
-          return (
-              <div>
-                  <div ref={ (ref) => {
-                      this.node = ref;
-                      console.log('此时的参数是什么：', this.node );
-                  } } >121212</div>
-                  <div>{ this.state.num }</div>
-                  <button onClick={() => this.setState({ num: this.state.num + 1  }) } >点击</button>
-              </div>
-          );
-      }
-  }
-  ```
+函数组件每一次 render ，函数上下文会重新执行，那么有一种情况就是，在执行一些事件方法改变数据或者保存新数据的时候，有没有必要更新视图，有没有必要把数据放到 state 中。如果视图层更新不依赖想要改变的数据，那么 state 改变带来的更新效果就是多余的。这时候更新无疑是一种性能上的浪费。
 
-  多次点击后的打印：第一次打印为 null ，第二次才是 div
+这种情况下，useRef 就派上用场了，useRef 可以创建出一个 ref 原始对象，只要组件没有销毁，ref 对象就一直存在，那么完全可以把一些不依赖于视图更新的数据储存到 ref 对象中。这样做的好处有两个：
 
-  ![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633697074728-c5581e15-90b1-4190-be16-2350b221a585.png)
+- 第一个能够直接修改数据，不会造成函数组件冗余的更新作用。
+- 第二个 useRef 保存数据，如果有 useEffect ，useMemo 引用 ref 对象中的数据，无须将 ref 对象添加成 dep 依赖项，因为 useRef 始终指向一个内存空间，**所以这样一点好处是可以随时访问到变化后的值。**
 
-  
+### ref原理揭秘
 
-  #### ref 执行时机和处理逻辑
+用回调函数方式处理 Ref ，**如果点击一次按钮，会打印几次 console.log ？**
 
-  对于整个 Ref 的处理，都是在 commit 阶段发生的。 commit 阶段会进行真正的 Dom 操作，此时 ref 就是用来获取真实的 DOM 以及组件实例的，所以需要 commit 阶段处理。
+```jsx
+export class RefDemo extends React.PureComponent<any, any> {
+    public refDom = React.createRef();
+    public node = null;
 
-  但是对于 Ref 处理函数，React 底层用两个方法处理：**commitDetachRef** 和 **commitAttachRef** ，上述两次 console.log 一次为 null，一次为div 就是分别调用了上述的方法。
+    constructor() {
+        super();
+        this.state = {
+            num: 0
+        };
+    }
 
-  这两次一次在 DOM 更新之前，一次在 DOM 更新之后。
+    public render(): React.ReactNode {
+        return (
+            <div>
+                <div ref={ (ref) => {
+                    this.node = ref;
+                    console.log('此时的参数是什么：', this.node );
+                } } >121212</div>
+                <div>{ this.state.num }</div>
+                <button onClick={() => this.setState({ num: this.state.num + 1  }) } >点击</button>
+            </div>
+        );
+    }
+}
+```
 
-  
+多次点击后的打印：第一次打印为 null ，第二次才是 div
 
-  - 第一阶段：一次更新中，在 commit 的 mutation 阶段, 执行commitDetachRef，commitDetachRef 会清空之前ref值，使其重置为 null。
-  - 第二阶段：DOM 更新阶段，这个阶段会根据不同的 effect 标签，真实的操作 DOM 。
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1633697074728-c5581e15-90b1-4190-be16-2350b221a585.png)
 
-  - 第三阶段：layout 阶段，在更新真实元素节点之后，此时需要更新 ref 。
 
-  ```js
-  function commitDetachRef(current: Fiber) {
-    const currentRef = current.ref;
-    if (currentRef !== null) {
-      if (typeof currentRef === 'function') { /* function 和 字符串获取方式。 */
-        currentRef(null); 
-      } else {   /* Ref对象获取方式 */
-        currentRef.current = null;
-      }
+
+#### ref 执行时机和处理逻辑
+
+对于整个 Ref 的处理，都是在 commit 阶段发生的。 commit 阶段会进行真正的 Dom 操作，此时 ref 就是用来获取真实的 DOM 以及组件实例的，所以需要 commit 阶段处理。
+
+但是对于 Ref 处理函数，React 底层用两个方法处理：**commitDetachRef** 和 **commitAttachRef** ，上述两次 console.log 一次为 null，一次为div 就是分别调用了上述的方法。
+
+这两次一次在 DOM 更新之前，一次在 DOM 更新之后。
+
+
+
+- 第一阶段：一次更新中，在 commit 的 mutation 阶段, 执行commitDetachRef，commitDetachRef 会清空之前ref值，使其重置为 null。
+- 第二阶段：DOM 更新阶段，这个阶段会根据不同的 effect 标签，真实的操作 DOM 。
+
+- 第三阶段：layout 阶段，在更新真实元素节点之后，此时需要更新 ref 。
+
+```js
+function commitDetachRef(current: Fiber) {
+  const currentRef = current.ref;
+  if (currentRef !== null) {
+    if (typeof currentRef === 'function') { /* function 和 字符串获取方式。 */
+      currentRef(null); 
+    } else {   /* Ref对象获取方式 */
+      currentRef.current = null;
     }
   }
-  
-  function commitAttachRef(finishedWork: Fiber) {
-    const ref = finishedWork.ref;
-    if (ref !== null) {
-      const instance = finishedWork.stateNode;
-      let instanceToUse;
-      switch (finishedWork.tag) {
-        case HostComponent: //元素节点 获取元素
-          instanceToUse = getPublicInstance(instance);
-          break;
-        default:  // 类组件直接使用实例
-          instanceToUse = instance;
-      }
-      if (typeof ref === 'function') {
-        ref(instanceToUse);  //* function 和 字符串获取方式。 */
-      } else {
-        ref.current = instanceToUse; /* ref对象方式 */
-      }
+}
+
+function commitAttachRef(finishedWork: Fiber) {
+  const ref = finishedWork.ref;
+  if (ref !== null) {
+    const instance = finishedWork.stateNode;
+    let instanceToUse;
+    switch (finishedWork.tag) {
+      case HostComponent: //元素节点 获取元素
+        instanceToUse = getPublicInstance(instance);
+        break;
+      default:  // 类组件直接使用实例
+        instanceToUse = instance;
+    }
+    if (typeof ref === 'function') {
+      ref(instanceToUse);  //* function 和 字符串获取方式。 */
+    } else {
+      ref.current = instanceToUse; /* ref对象方式 */
     }
   }
-  ```
+}
+```
 
-  这一阶段，主要判断 ref 获取的是组件还是 DOM 元素标签，如果 DOM 元素，就会获取更新之后最新的 DOM 元素。上面流程中讲了三种获取 ref 的方式。 如果是字符串 ref="node" 或是 函数式 ref={(node)=> this.node = node } 会执行 ref 函数，重置新的 ref 。
+这一阶段，主要判断 ref 获取的是组件还是 DOM 元素标签，如果 DOM 元素，就会获取更新之后最新的 DOM 元素。上面流程中讲了三种获取 ref 的方式。 如果是字符串 ref="node" 或是 函数式 ref={(node)=> this.node = node } 会执行 ref 函数，重置新的 ref 。
 
-  如果是 ref 对象方式。
+如果是 ref 对象方式。
 
-  ```js
-  node = React.createRef() <div ref={ node } ></div> 
-  ```
+```js
+node = React.createRef() <div ref={ node } ></div> 
+```
 
-  会更新 ref 对象的 current 属性。达到更新 ref 对象的目的。
+会更新 ref 对象的 current 属性。达到更新 ref 对象的目的。
 
-### Ref 的处理特性
+#### Ref 的处理特性
+
+React 被 ref 标记的 fiber，那么每一次 fiber 更新都会调用 **commitDetachRef** 和 **commitAttachRef** 更新 Ref 吗 ？
+
+**答案是否定的，只有在 ref 更新的时候，才会调用如上方法更新 ref ，究其原因还要从如上两个方法的执行时期说起**
+
+**更新ref**
+
+**commitDetachRef** **调用时机**
+
+```js
+function commitMutationEffects(){
+     if (effectTag & Ref) {
+      const current = nextEffect.alternate;
+      if (current !== null) {
+        commitDetachRef(current);
+      }
+    }
+}
+```
+
+**commitAttachRef** **调用时机**
+
+```js
+function commitLayoutEffects(){
+     if (effectTag & Ref) {
+      commitAttachRef(nextEffect);
+    }
+}
+```
+
+从上可以清晰的看到只有含有 Ref tag 的时候，才会执行更新 ref。
+
+```js
+function markRef(current: Fiber | null, workInProgress: Fiber) {
+  const ref = workInProgress.ref;
+  if (
+    (current === null && ref !== null) ||      // 初始化的时候
+    (current !== null && current.ref !== ref)  // ref 指向发生改变
+  ) {
+    workInProgress.effectTag |= Ref;
+  }
+}
+```
+
+首先 markRef 方法执行在两种情况下：
+
+- 第一种就是类组件的更新过程中。
+- 第二种就是更新 HostComponent 的时候。
 
 
+
+markRef 会在以下两种情况下给 effectTag 标记 Ref，只有标记了 Ref tag 才会有后续的 commitAttachRef 和 commitDetachRef 流程。（ current 为当前调和的 fiber 节点 ）
+
+- 第一种 current === null && ref !== null：就是在 fiber 初始化的时候，第一次 ref 处理的时候，是一定要标记 Ref 的。
+- 第二种 current !== null && current.ref !== ref：就是 fiber 更新的时候，但是 ref 对象的指向变了。
+
+用回调函数方式处理 Ref ，**如果点击一次按钮，会打印几次 console.log？**这个问题中，为什么每次都会打印ref？
+
+因为每一次更新的时候，都给ref赋值了新的函数，那么markRef中就会判断成 current.ref !== ref，所以就会重新打 Ref 标签，那么在 commit 阶段，就会更新 ref 执行 ref 回调函数了。
+
+**卸载 ref**
+
+```js
+this.state.isShow && <div ref={()=>this.node = node} >元素节点</div>
+```
+
+在一次更新的时候，改变 isShow 属性，使之由 true 变成了 false， 那么 div 元素会被卸载，那么 ref 会怎么处理呢？
+
+被卸载的 fiber 会被打成 Deletion effect tag ，然后在 commit 阶段会进行 commitDeletion 流程。对于有 ref 标记的 ClassComponent （类组件） 和 HostComponent （元素），会统一走 safelyDetachRef 流程，这个方法就是用来卸载 ref。改变 isShow 属性，使之由 true 变成了 false， 那么 div 元素会被卸载，那么 ref 会怎么处理呢？
+
+```js
+function safelyDetachRef(current) {
+  const ref = current.ref;
+  if (ref !== null) {
+    if (typeof ref === 'function') {  // 函数式 ｜ 字符串
+        ref(null)
+    } else {
+      ref.current = null;  // ref 对象
+    }
+  }
+}
+```
+
+- 对于字符串 ref="dom" 和函数类型 ref={(node)=> this.node = node } 的 ref，会执行传入 null 置空 ref 。
+- 对于 ref 对象类型，会清空 ref 对象上的 current 属性。
+
+借此完成卸载 ref 流程。
 
 
 
