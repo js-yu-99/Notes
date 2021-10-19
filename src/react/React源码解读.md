@@ -1394,3 +1394,176 @@ const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
 
 
 
+## 状态更新
+
+### 创建Update对象
+
+每次`状态更新`都会创建一个保存**更新状态相关内容**的对象，我们叫他`Update`。在`render阶段`的`beginWork`中会根据`Update`计算新的`state`。
+
+在`React`中，有如下方法可以触发状态更新：
+
+- ReactDOM.render —— HostRoot
+- this.setState —— ClassComponent
+- this.forceUpdate —— ClassComponent
+- useState —— FunctionComponent
+- useReducer —— FunctionComponent
+
+一共三种组件（`HostRoot` | `ClassComponent` | `FunctionComponent`）可以触发更新。
+
+由于不同类型组件工作方式不同，所以存在两种不同结构的`Update`，其中`ClassComponent`与`HostRoot`共用一套`Update`结构，`FunctionComponent`单独使用一种`Update`结构。
+
+虽然他们的结构不同，但是他们工作机制与工作流程大体相同。
+
+#### Update结构
+
+```js
+function createUpdate(eventTime, lane) {
+  var update = {
+    eventTime: eventTime,
+    lane: lane,
+    tag: UpdateState,
+    payload: null,
+    callback: null,
+    next: null
+  };
+  return update;
+}
+```
+
+- eventTime：任务时间，通过`performance.now()`获取的毫秒数。
+- lane：优先级相关字段。当前还不需要掌握他，只需要知道不同`Update`优先级可能是不同的。
+
+> 可以将`lane`类比`心智模型`中`需求的紧急程度`。
+
+- suspenseConfig：`Suspense`相关，暂不关注。
+- tag：更新的类型，包括`UpdateState` | `ReplaceState` | `ForceUpdate` | `CaptureUpdate`。
+- payload：更新挂载的数据，不同类型组件挂载的数据不同。对于`ClassComponent`，`payload`为`this.setState`的第一个传参。对于`HostRoot`，`payload`为`ReactDOM.render`的第一个传参。
+- callback：更新的回调函数。
+- next：与其他`Update`连接形成链表。
+
+
+
+
+
+### 深入理解优先级
+
+```js
+const NoPriority = 0; // 初始化时的无优先级
+const ImmediatePriority = 1; // 立刻执行的优先级 同步优先级
+const UserBlockingPriority = 2; // 用户触发更新时的优先级
+const NormalPriority = 3; // 一般优先级 最常见
+const LowPriority = 4; // 低优先级
+const IdlePriority = 5; // 空闲的优先级
+```
+
+`React`根据`人机交互研究的结果`中用户对`交互`的预期顺序为`交互`产生的`状态更新`赋予不同优先级。
+
+- 生命周期方法：同步执行。
+- 受控的用户输入：比如输入框内输入文字，同步执行。
+- 交互事件：比如动画，高优先级执行。
+- 其他：比如数据请求，低优先级执行。
+
+每当需要调度任务时，`React`会调用`Scheduler`提供的方法`runWithPriority`。
+
+该方法接收一个`优先级`常量与一个`回调函数`作为参数。`回调函数`会以`优先级`高低为顺序排列在一个`定时器`中并在合适的时间触发。
+
+```js
+function unstable_runWithPriority(priorityLevel, eventHandler) {
+  switch (priorityLevel) {
+    case ImmediatePriority:
+    case UserBlockingPriority:
+    case NormalPriority:
+    case LowPriority:
+    case IdlePriority:
+      break;
+    default:
+      priorityLevel = NormalPriority;
+  }
+
+  var previousPriorityLevel = currentPriorityLevel;
+  currentPriorityLevel = priorityLevel;
+
+  try {
+    return eventHandler();
+  } finally {
+    currentPriorityLevel = previousPriorityLevel;
+  }
+}
+```
+
+对于更新来讲，传递的`回调函数`一般为`render阶段的入口函数`。
+
+```js
+function initializeUpdateQueue(fiber) {
+  var queue = {
+    baseState: fiber.memoizedState,
+    firstBaseUpdate: null,
+    lastBaseUpdate: null,
+    shared: {
+      pending: null
+    },
+    effects: null
+  };
+  fiber.updateQueue = queue;
+}
+```
+
+高优先级的任务出现时会立即替换掉地低优先级的任务并执行高优先级的任务
+
+在`processUpdateQueue`方法中，`shared.pending`环状链表会被剪开并拼接在`baseUpdate`后面。
+
+
+
+**如何保证状态正确？**
+
+- `render阶段`可能被中断。如何保证`updateQueue`中保存的`Update`不丢失？
+
+  - 在`render阶段`，`shared.pending`的环被剪开并连接在`updateQueue.lastBaseUpdate`后面。
+
+    实际上`shared.pending`会被同时连接在`workInProgress updateQueue.lastBaseUpdate`与`current updateQueue.lastBaseUpdate`后面。
+
+    当`render阶段`被中断后重新开始时，会基于`current updateQueue`克隆出`workInProgress updateQueue`。由于`current updateQueue.lastBaseUpdate`已经保存了上一次的`Update`，所以不会丢失。
+
+    当`commit阶段`完成渲染，由于`workInProgress updateQueue.lastBaseUpdate`中保存了上一次的`Update`，所以 `workInProgress Fiber树`变成`current Fiber树`后也不会造成`Update`丢失。
+
+- 有时候当前`状态`需要依赖前一个`状态`。如何在支持跳过`低优先级状态`的同时保证**状态依赖的连续性**？
+
+  - 当某个`Update`由于优先级低而被跳过时，保存在`baseUpdate`中的不仅是该`Update`，还包括链表中该`Update`之后的所有`Update`。
+  - 当有`Update`被跳过时，`下次更新的baseState !== 上次更新的memoizedState`
+
+
+
+### 同步更新的React
+
+将`更新机制`类比`代码版本控制`。
+
+在没有代码版本控制前，我们在代码中逐步叠加功能。一切看起来井然有序，直到我们遇到了一个紧急线上bug（红色节点）。
+
+![img](https://react.iamkasong.com/img/git1.png)
+
+为了修复这个bug，我们需要首先将之前的代码提交。
+
+在React中，所有通过ReactDOM.render创建的应用都是通过类似的方式更新状态。
+
+即没有优先级概念，高优更新（红色节点）需要排在其他更新后面执行。
+
+### 并发更新的React
+
+当有了代码版本控制，有紧急线上bug需要修复时，我们暂存当前分支的修改，在master分支修复bug并紧急上线。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1634655634031-27e0b49f-dd77-4140-9b8e-2a45a429f168.png)
+
+bug修复上线后通过git rebase命令和开发分支连接上。开发分支基于修复bug的版本继续开发。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1634655634049-720a76db-18be-4358-ab9a-1e00ddd01022.png)
+
+在React中，通过ReactDOM.createBlockingRoot和ReactDOM.createRoot创建的应用会采用并发的方式更新状态。
+
+高优更新（红色节点）中断正在进行中的低优更新（蓝色节点），先完成render - commit流程。
+
+待高优更新完成后，低优更新基于高优更新的结果重新更新。
+
+
+
+
+
