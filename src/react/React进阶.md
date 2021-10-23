@@ -1356,6 +1356,108 @@ function safelyDetachRef(current) {
 
 
 
+## Context（新版）
+
+提供上下文模式是为了解决 props 传递的问题。
+
+**提供者永远要在消费者上层**
+
+```
+const ThemeContext = React.createContext(null) //
+const ThemeProvider = ThemeContext.Provider  //提供者
+const ThemeConsumer = ThemeContext.Consumer // 订阅消费者
+```
+
+createContext 接受一个参数，作为初始化 context 的内容，返回一个context 对象，Context 对象上的 Provider 作为提供者，Context 对象上的 Consumer 作为消费者。
+
+
+
+### 新版本提供者
+
+```
+const ThemeProvider = ThemeContext.Provider  //提供者
+export default function ProviderDemo(){
+    const [ contextValue , setContextValue ] = React.useState({  color:'#ccc', background:'pink' })
+    return <div>
+        <ThemeProvider value={ contextValue } > 
+            <Son />
+        </ThemeProvider>
+    </div>
+}
+```
+
+provider 作用有两个：
+
+- value 属性传递 context，供给 Consumer 使用。
+- value 属性改变，ThemeProvider 会让消费 Provider value 的组件重新渲染。
+
+
+
+### 新版本消费者
+
+对于新版本想要获取 context 的消费者，React 提供了3种形式
+
+#### 类组件之contextType 方式
+
+React v16.6 提供了 contextType 静态属性，用来获取上面 Provider 提供的 value 属性。
+
+```
+const ThemeContext = React.createContext(null)
+// 类组件 - contextType 方式
+class ConsumerDemo extends React.Component{
+   render(){
+       const { color,background } = this.context
+       return <div style={{ color,background } } >消费者</div> 
+   }
+}
+ConsumerDemo.contextType = ThemeContext
+
+const Son = ()=> <ConsumerDemo />
+```
+
+- 类组件的静态属性上的 contextType 属性，指向需要获取的 context（ demo 中的 ThemeContext ），就可以方便获取到最近一层 Provider 提供的 contextValue 值。
+- 这种方式只适用于类组件。
+
+
+
+#### 函数组件之 useContext 方式
+
+React hooks 提供了 useContext。
+
+```
+const ThemeContext = React.createContext(null)
+// 函数组件 - useContext方式
+function ConsumerDemo(){
+    const  contextValue = React.useContext(ThemeContext) /*  */
+    const { color,background } = contextValue
+    return <div style={{ color,background } } >消费者</div> 
+}
+const Son = ()=> <ConsumerDemo />
+```
+
+useContext 接受一个参数，就是想要获取的 context ，返回一个 value 值，就是最近的 provider 提供 contextValue 值。
+
+
+
+#### 订阅者之 Consumer 方式
+
+```
+const ThemeConsumer = ThemeContext.Consumer // 订阅消费者
+
+function ConsumerDemo(props){
+    const { color,background } = props
+    return <div style={{ color,background } } >消费者</div> 
+}
+const Son = () => (
+    <ThemeConsumer>
+       { /* 将 context 内容转化成 props  */ }
+       { (contextValue)=> <ConsumerDemo  {...contextValue}  /> }
+    </ThemeConsumer>
+) 
+```
+
+- Consumer 订阅者采取 render props 方式，接受最近一层 provider 中value 属性，作为 render props 函数的参数，可以将参数取出来，作为 props 混入 ConsumerDemo 组件，说白了就是 context 变成了 props。
+
 
 
 ## 问与答
