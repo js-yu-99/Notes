@@ -1460,6 +1460,16 @@ const Son = () => (
 
 
 
+### 动态context
+
+在 Provider 里 value 的改变，会使引用**contextType **,**useContext**消费该 context 的组件重新 render ，同样会使 Consumer 的 children 函数重新执行，与前两种方式不同的是 Consumer 方式，当 context 内容改变的时候，不会让引用 Consumer 的父组件重新更新。
+
+
+
+___
+
+
+
 ## 问与答
 
 + 问：老版本的 React 中，为什么写 jsx 的文件要默认引入 React?
