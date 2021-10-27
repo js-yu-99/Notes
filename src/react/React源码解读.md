@@ -1396,6 +1396,44 @@ const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
 
 ## 状态更新
 
+
+
+```
+触发状态更新（根据场景调用不同方法）
+
+    |
+    |
+    v
+
+创建Update对象
+
+    |
+    |
+    v
+
+从fiber到root（`markUpdateLaneFromFiberToRoot`）
+
+    |
+    |
+    v
+
+调度更新（`ensureRootIsScheduled`）
+
+    |
+    |
+    v
+
+render阶段（`performSyncWorkOnRoot` 或 `performConcurrentWorkOnRoot`）
+
+    |
+    |
+    v
+
+commit阶段（`commitRoot`）
+```
+
+
+
 ### 创建Update对象
 
 每次`状态更新`都会创建一个保存**更新状态相关内容**的对象，我们叫他`Update`。在`render阶段`的`beginWork`中会根据`Update`计算新的`state`。
@@ -1440,6 +1478,78 @@ function createUpdate(eventTime, lane) {
 - payload：更新挂载的数据，不同类型组件挂载的数据不同。对于`ClassComponent`，`payload`为`this.setState`的第一个传参。对于`HostRoot`，`payload`为`ReactDOM.render`的第一个传参。
 - callback：更新的回调函数。
 - next：与其他`Update`连接形成链表。
+
+
+
+#### Update与Fiber的联系
+
+`Update`存在一个连接其他`Update`形成链表的字段`next`
+
+类似`Fiber节点`组成`Fiber树`，`Fiber节点`上的多个`Update`会组成链表并被包含在`fiber.updateQueue`中。
+
+`Fiber节点`最多同时存在两个`updateQueue`：
+
+- `current fiber`保存的`updateQueue`即`current updateQueue`
+- `workInProgress fiber`保存的`updateQueue`即`workInProgress updateQueue`
+
+在`commit阶段`完成页面渲染后，`workInProgress Fiber树`变为`current Fiber树`，`workInProgress Fiber树`内`Fiber节点`的`updateQueue`就变成`current updateQueue`。
+
+#### updateQueue
+
+`ClassComponent`与`HostRoot`使用的`UpdateQueue`结构
+
+```js
+function initializeUpdateQueue(fiber) {
+  var queue = {
+    baseState: fiber.memoizedState,
+    firstBaseUpdate: null,
+    lastBaseUpdate: null,
+    shared: {
+      pending: null
+    },
+    effects: null
+  };
+  fiber.updateQueue = queue;
+}
+```
+
+- baseState：本次更新前该`Fiber节点`的`state`，`Update`基于该`state`计算更新后的`state`。
+
+- `firstBaseUpdate`与`lastBaseUpdate`：本次更新前该`Fiber节点`已保存的`Update`。以链表形式存在，链表头为`firstBaseUpdate`，链表尾为`lastBaseUpdate`。之所以在更新产生前该`Fiber节点`内就存在`Update`，是由于某些`Update`优先级较低所以在上次`render阶段`由`Update`计算`state`时被跳过。
+
+- `shared.pending`：触发更新时，产生的`Update`会保存在`shared.pending`中形成单向环状链表。当由`Update`计算`state`时这个环会被剪开并连接在`lastBaseUpdate`后面。
+
+- effects：数组。保存`update.callback !== null`的`Update`。
+
+
+
+### 从fiber到root
+
+调用`markUpdateLaneFromFiberToRoot`方法。
+
+该方法做的工作可以概括为：从`触发状态更新的fiber`一直向上遍历到`rootFiber`，并返回`rootFiber`。
+
+### 调度更新
+
+调用的方法是`ensureRootIsScheduled` 通知`Scheduler`根据**更新**的优先级，决定以**同步**还是**异步**的方式调度本次更新。
+
+```js
+if (newCallbackPriority === SyncLanePriority) {
+  // 任务已经过期，需要同步执行render阶段
+  newCallbackNode = scheduleSyncCallback(
+    performSyncWorkOnRoot.bind(null, root)
+  );
+} else {
+  // 根据任务优先级异步执行render阶段
+  var schedulerPriorityLevel = lanePriorityToSchedulerPriority(
+    newCallbackPriority
+  );
+  newCallbackNode = scheduleCallback(
+    schedulerPriorityLevel,
+    performConcurrentWorkOnRoot.bind(null, root)
+  );
+}
+```
 
 
 
