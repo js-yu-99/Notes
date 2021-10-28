@@ -1,3 +1,5 @@
+
+
 ## React理念
 
 官方说明：
@@ -1405,7 +1407,7 @@ const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
     |
     v
 
-创建Update对象
+创建Update对象（`updateContainer`）
 
     |
     |
@@ -1675,5 +1677,259 @@ bug修复上线后通过git rebase命令和开发分支连接上。开发分支�
 
 
 
+### ReactDOM.render
 
+```js
+function render(element, container, callback) {
+  ...
+  return legacyRenderSubtreeIntoContainer(null, element, container, false, callback);
+}
+function legacyRenderSubtreeIntoContainer(parentComponent, children, container, forceHydrate, callback) {
+		...
+  	root = container._reactRootContainer = legacyCreateRootFromDOMContainer(container, forceHydrate);
+    fiberRoot = root._internalRoot;
+    ...
+    unbatchedUpdates(function () {
+      updateContainer(children, fiberRoot, parentComponent, callback); // 创建update对象
+    });
+}
+function legacyCreateRootFromDOMContainer(container, forceHydrate) {
+		while (rootSibling = container.lastChild) {
+        container.removeChild(rootSibling);
+    }
+    return createLegacyRoot(container, shouldHydrate ? {
+    hydrate: true
+  	} : undefined);
+}
+// createLegacyRoot -> ReactDOMBlockingRoot -> createRootImpl -> createContainer -> createFiberRoot
+  
+export function createFiberRoot(
+  containerInfo: any,
+  tag: RootTag,
+  hydrate: boolean,
+  hydrationCallbacks: null | SuspenseHydrationCallbacks,
+): FiberRoot {
+  // 创建fiberRootNode
+  const root: FiberRoot = (new FiberRootNode(containerInfo, tag, hydrate): any);
+  
+  // 创建rootFiber
+  const uninitializedFiber = createHostRootFiber(tag);
+
+  // 连接rootFiber与fiberRootNode
+  root.current = uninitializedFiber;
+  uninitializedFiber.stateNode = root;
+
+  // 初始化updateQueue
+  initializeUpdateQueue(uninitializedFiber);
+
+  return root;
+}
+```
+
+`legacyCreateRootFromDOMContainer`方法内部会调用`createFiberRoot`方法完成`fiberRootNode`和`rootFiber`的创建以及关联。并初始化`updateQueue`。
+
+
+
+#### ReactDOM.createRoot
+
+```js
+function createRoot(container, options) {
+  ...
+  return new ReactDOMRoot(container, options);
+}
+function ReactDOMRoot(container, options) {
+  this._internalRoot = createRootImpl(container, ConcurrentRoot, options);
+}
+```
+
+
+
+#### 创建update
+
+```js
+export function updateContainer(
+  element: ReactNodeList,
+  container: OpaqueRoot,
+  parentComponent: ?React$Component<any, any>,
+  callback: ?Function,
+): Lane {
+  // ...省略与逻辑不相关代码
+
+  // 创建update
+  const update = createUpdate(eventTime, lane, suspenseConfig);
+  
+  // update.payload为需要挂载在根节点的组件
+  update.payload = {element};
+
+  // callback为ReactDOM.render的第三个参数 —— 回调函数
+  callback = callback === undefined ? null : callback;
+  if (callback !== null) {
+    update.callback = callback;
+  }
+
+  // 将生成的update加入updateQueue
+  enqueueUpdate(current, update);
+  // 调度更新
+  scheduleUpdateOnFiber(current, lane, eventTime);
+
+}
+```
+
+
+
+### 整体流程
+
+```
+创建fiberRootNode、rootFiber、updateQueue（`legacyCreateRootFromDOMContainer`）
+
+    |
+    |
+    v
+
+创建Update对象（`updateContainer`）
+
+    |
+    |
+    v
+
+从fiber到root（`markUpdateLaneFromFiberToRoot`）
+
+    |
+    |
+    v
+
+调度更新（`ensureRootIsScheduled`）
+
+    |
+    |
+    v
+
+render阶段（`performSyncWorkOnRoot` 或 `performConcurrentWorkOnRoot`）
+
+    |
+    |
+    v
+
+commit阶段（`commitRoot`）
+```
+
+
+
+当前`React`共有三种模式：
+
+- `legacy`，这是当前`React`使用的方式。当前没有计划删除本模式，但是这个模式可能不支持一些新功能。
+- `blocking`，开启部分`concurrent`模式特性的中间模式。目前正在实验中。作为迁移到`concurrent`模式的第一个步骤。
+- `concurrent`，面向未来的开发模式。我们之前讲的`任务中断/任务优先级`都是针对`concurrent`模式。
+
+调用方式:
+
+- `legacy` -- `ReactDOM.render(<App />, rootNode)`
+- `blocking` -- `ReactDOM.createBlockingRoot(rootNode).render(<App />)`
+- `concurrent` -- `ReactDOM.createRoot(rootNode).render(<App />)`
+
+**三种调用方式只是针对createRootImpl函数传参的不同**
+
+```js
+var LegacyRoot = 0;
+var BlockingRoot = 1;
+var ConcurrentRoot = 2;
+
+function ReactDOMRoot(container, options) {
+  this._internalRoot = createRootImpl(container, ConcurrentRoot, options);
+}
+
+function ReactDOMBlockingRoot(container, tag, options) {
+  this._internalRoot = createRootImpl(container, tag, options);
+```
+
+
+
+### tihs.setState流程
+
+```js
+Component.prototype.setState = function (partialState, callback) {
+  this.updater.enqueueSetState(this, partialState, callback, 'setState');
+};
+```
+
+
+
+```js
+enqueueSetState(inst, payload, callback) {
+  // 通过组件实例获取对应fiber
+  const fiber = getInstance(inst);
+
+  const eventTime = requestEventTime();
+  const suspenseConfig = requestCurrentSuspenseConfig();
+
+  // 获取优先级
+  const lane = requestUpdateLane(fiber, suspenseConfig);
+
+  // 创建update
+  const update = createUpdate(eventTime, lane, suspenseConfig);
+
+  update.payload = payload;
+
+  // 赋值回调函数
+  if (callback !== undefined && callback !== null) {
+    update.callback = callback;
+  }
+
+  // 将update插入updateQueue
+  enqueueUpdate(fiber, update);
+  // 调度update
+  scheduleUpdateOnFiber(fiber, lane, eventTime);
+}
+```
+
+对于`ClassComponent`，`update.payload`为`this.setState`的第一个传参（即要改变的`state`）
+
+
+
+#### this.forceUpdate
+
+````js
+enqueueForceUpdate(inst, callback) {
+    const fiber = getInstance(inst);
+    const eventTime = requestEventTime();
+    const suspenseConfig = requestCurrentSuspenseConfig();
+    const lane = requestUpdateLane(fiber, suspenseConfig);
+
+    const update = createUpdate(eventTime, lane, suspenseConfig);
+
+    // 赋值tag为ForceUpdate
+    update.tag = ForceUpdate;
+
+    if (callback !== undefined && callback !== null) {
+      update.callback = callback;
+    }
+
+    enqueueUpdate(fiber, update);
+    scheduleUpdateOnFiber(fiber, lane, eventTime);
+  },
+};
+````
+
+**`update.tag = ForceUpdate` 的作用？**
+
+在判断`ClassComponent`是否需要更新时有两个条件需要满足：
+
+```js
+const shouldUpdate =
+  checkHasForceUpdateAfterProcessing() ||
+  checkShouldComponentUpdate(
+    workInProgress,
+    ctor,
+    oldProps,
+    newProps,
+    oldState,
+    newState,
+    nextContext,
+  );
+```
+
+- checkHasForceUpdateAfterProcessing：内部会判断本次更新的`Update`是否为`ForceUpdate`。即如果本次更新的`Update`中存在`tag`为`ForceUpdate`，则返回`true`。
+- checkShouldComponentUpdate：内部会调用`shouldComponentUpdate`方法。以及当该`ClassComponent`为`PureComponent`时会浅比较`state`与`props`。
+
+所以，当某次更新含有`tag`为`ForceUpdate`的`Update`，那么当前`ClassComponent`不会受其他`性能优化手段`（`shouldComponentUpdate`|`PureComponent`）影响，一定会更新。
 
