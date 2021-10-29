@@ -1933,3 +1933,93 @@ const shouldUpdate =
 
 所以，当某次更新含有`tag`为`ForceUpdate`的`Update`，那么当前`ClassComponent`不会受其他`性能优化手段`（`shouldComponentUpdate`|`PureComponent`）影响，一定会更新。
 
+
+
+## Hook
+
+### 简单实现useState
+
+```js
+let isMount = true;
+let workInProcessHook = null;
+
+const filber = {
+  memoizedState: null, // hook
+  stateNode: App, // 节点实例
+}
+
+function run() {
+  workInProcessHook = filber.memoizedState;
+  const app = filber.stateNode;
+  isMount = false;
+  return app();
+}
+
+function dispatchAction(queue, action) {
+  const update = {
+    action,
+    next: null,
+  };
+  if (queue.pending === null) {
+    update.next = update;
+  } else {
+    update.next = queue.pending.next;
+    queue.pending.next = update;
+  }
+  queue.pending = update;
+  run();
+}
+
+function useState(initialState) {
+  let hook;
+  if (isMount) {
+    hook = {
+      queue: {
+        pending: null
+      },
+      memoizedState: initialState, // hook state
+      next: null,
+    }
+    if (!filber.memoizedState) {
+      filber.memoizedState = hook;
+    } else {
+      workInProcessHook.next = hook;
+    }
+    workInProcessHook = hook;
+  } else {
+    hook = workInProcessHook;
+    workInProcessHook = workInProcessHook.next;
+  }
+
+  let baseState = hook.memoizedState;
+  if (hook.queue.pending) {
+    let firstUpdate = hook.queue.pending.next;
+    do {
+      const action = firstUpdate.action;
+      baseState = action(baseState);
+      firstUpdate = firstUpdate.next;
+    } while (firstUpdate !== hook.queue.pending.next);
+
+    hook.queue.pending = null;
+  }
+  hook.memoizedState = baseState;
+  return [baseState, dispatchAction.bind(null, hook.queue)];
+}
+
+function App() {
+  const [num, updateNum] = useState(0);
+
+  console.log('isMount=', isMount);
+  console.log('num=', num);
+
+  return {
+    onClick() {
+      updateNum(num => num + 1);
+      updateNum(num => num + 1);
+      updateNum(num => num + 1);
+    }
+  }
+}
+window.app = App();
+```
+
