@@ -2023,3 +2023,37 @@ function App() {
 window.app = App();
 ```
 
+
+
+## Hooks数据结构
+
+```js
+/ mount时的Dispatcher
+const HooksDispatcherOnMount: Dispatcher = {
+  useCallback: mountCallback,
+  useContext: readContext,
+  useEffect: mountEffect,
+  useImperativeHandle: mountImperativeHandle,
+  useLayoutEffect: mountLayoutEffect,
+  useMemo: mountMemo,
+  useReducer: mountReducer,
+  useRef: mountRef,
+  useState: mountState,
+  // ...省略
+};
+
+// update时的Dispatcher
+const HooksDispatcherOnUpdate: Dispatcher = {
+  useCallback: updateCallback,
+  useContext: readContext,
+  useEffect: updateEffect,
+  useImperativeHandle: updateImperativeHandle,
+  useLayoutEffect: updateLayoutEffect,
+  useMemo: updateMemo,
+  useReducer: updateReducer,
+  useRef: updateRef,
+  useState: updateState,
+  // ...省略
+};
+```
+
