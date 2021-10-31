@@ -2057,3 +2057,23 @@ const HooksDispatcherOnUpdate: Dispatcher = {
 };
 ```
 
+`mount`时调用的`hook`和`update`时调用的`hook`其实是两个不同的函数。
+
+在`FunctionComponent` `render`前，会根据`FunctionComponent`对应`fiber`的以下条件区分`mount`与`update`。
+
+```js
+current === null || current.memoizedState === null
+```
+
+并将不同情况对应的`dispatcher`赋值给全局变量`ReactCurrentDispatcher`的`current`属性。
+
+```js
+ReactCurrentDispatcher.current =
+      current === null || current.memoizedState === null
+        ? HooksDispatcherOnMount
+        : HooksDispatcherOnUpdate;
+```
+
+在`FunctionComponent` `render`时，会从`ReactCurrentDispatcher.current`（即当前`dispatcher`）中寻找需要的`hook`。
+
+不同的调用栈上下文为`ReactCurrentDispatcher.current`赋值不同的`dispatcher`，则`FunctionComponent` `render`时调用的`hook`也是不同的函数。
