@@ -1933,3 +1933,147 @@ const shouldUpdate =
 
 所以，当某次更新含有`tag`为`ForceUpdate`的`Update`，那么当前`ClassComponent`不会受其他`性能优化手段`（`shouldComponentUpdate`|`PureComponent`）影响，一定会更新。
 
+
+
+## Hook
+
+### 简单实现useState
+
+```js
+let isMount = true;
+let workInProcessHook = null;
+
+const filber = {
+  memoizedState: null, // hook
+  stateNode: App, // 节点实例
+}
+
+function run() {
+  workInProcessHook = filber.memoizedState;
+  const app = filber.stateNode;
+  isMount = false;
+  return app();
+}
+
+function dispatchAction(queue, action) {
+  const update = {
+    action,
+    next: null,
+  };
+  if (queue.pending === null) {
+    update.next = update;
+  } else {
+    update.next = queue.pending.next;
+    queue.pending.next = update;
+  }
+  queue.pending = update;
+  run();
+}
+
+function useState(initialState) {
+  let hook;
+  if (isMount) {
+    hook = {
+      queue: {
+        pending: null
+      },
+      memoizedState: initialState, // hook state
+      next: null,
+    }
+    if (!filber.memoizedState) {
+      filber.memoizedState = hook;
+    } else {
+      workInProcessHook.next = hook;
+    }
+    workInProcessHook = hook;
+  } else {
+    hook = workInProcessHook;
+    workInProcessHook = workInProcessHook.next;
+  }
+
+  let baseState = hook.memoizedState;
+  if (hook.queue.pending) {
+    let firstUpdate = hook.queue.pending.next;
+    do {
+      const action = firstUpdate.action;
+      baseState = action(baseState);
+      firstUpdate = firstUpdate.next;
+    } while (firstUpdate !== hook.queue.pending.next);
+
+    hook.queue.pending = null;
+  }
+  hook.memoizedState = baseState;
+  return [baseState, dispatchAction.bind(null, hook.queue)];
+}
+
+function App() {
+  const [num, updateNum] = useState(0);
+
+  console.log('isMount=', isMount);
+  console.log('num=', num);
+
+  return {
+    onClick() {
+      updateNum(num => num + 1);
+      updateNum(num => num + 1);
+      updateNum(num => num + 1);
+    }
+  }
+}
+window.app = App();
+```
+
+
+
+## Hooks数据结构
+
+```js
+/ mount时的Dispatcher
+const HooksDispatcherOnMount: Dispatcher = {
+  useCallback: mountCallback,
+  useContext: readContext,
+  useEffect: mountEffect,
+  useImperativeHandle: mountImperativeHandle,
+  useLayoutEffect: mountLayoutEffect,
+  useMemo: mountMemo,
+  useReducer: mountReducer,
+  useRef: mountRef,
+  useState: mountState,
+  // ...省略
+};
+
+// update时的Dispatcher
+const HooksDispatcherOnUpdate: Dispatcher = {
+  useCallback: updateCallback,
+  useContext: readContext,
+  useEffect: updateEffect,
+  useImperativeHandle: updateImperativeHandle,
+  useLayoutEffect: updateLayoutEffect,
+  useMemo: updateMemo,
+  useReducer: updateReducer,
+  useRef: updateRef,
+  useState: updateState,
+  // ...省略
+};
+```
+
+`mount`时调用的`hook`和`update`时调用的`hook`其实是两个不同的函数。
+
+在`FunctionComponent` `render`前，会根据`FunctionComponent`对应`fiber`的以下条件区分`mount`与`update`。
+
+```js
+current === null || current.memoizedState === null
+```
+
+并将不同情况对应的`dispatcher`赋值给全局变量`ReactCurrentDispatcher`的`current`属性。
+
+```js
+ReactCurrentDispatcher.current =
+      current === null || current.memoizedState === null
+        ? HooksDispatcherOnMount
+        : HooksDispatcherOnUpdate;
+```
+
+在`FunctionComponent` `render`时，会从`ReactCurrentDispatcher.current`（即当前`dispatcher`）中寻找需要的`hook`。
+
+不同的调用栈上下文为`ReactCurrentDispatcher.current`赋值不同的`dispatcher`，则`FunctionComponent` `render`时调用的`hook`也是不同的函数。
