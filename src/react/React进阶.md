@@ -1464,6 +1464,130 @@ const Son = () => (
 
 在 Provider 里 value 的改变，会使引用**contextType **,**useContext**消费该 context 的组件重新 render ，同样会使 Consumer 的 children 函数重新执行，与前两种方式不同的是 Consumer 方式，当 context 内容改变的时候，不会让引用 Consumer 的父组件重新更新。
 
+**如何阻止 Provider value 改变造成的 children 不必要的渲染？**
+
+使用React.memo，pureComponent对子组件props进行浅比较处理。
+
+> **const** Son = React.memo(()=> <ConsumerDemo />)  
+
+
+
+### 其他的API
+
++ #### displayName
+
+  + context 对象接受一个名为 `displayName` 的 property，类型为字符串。React DevTools 使用该字符串来确定 context 要显示的内容。
+
+    ```js
+    const MyContext = React.createContext(/* 初始化内容 */);
+    MyContext.displayName = 'MyDisplayName';
+    
+    <MyContext.Provider> // "MyDisplayName.Provider" 在 DevTools 中
+    <MyContext.Consumer> // "MyDisplayName.Consumer" 在 DevTools 中
+    ```
+
+
+
+### Demo
+
+```jsx
+import React, {useContext} from 'react';
+import { HomeOutlined, SettingFilled, SmileOutlined, SyncOutlined, LoadingOutlined } from '@ant-design/icons';
+
+const ThemeContext = React.createContext(null); // 主题颜色Context
+const theme = { // 主题颜色
+    dark: { color: '#1890ff' , background: '#1890ff', border: '1px solid blue' , type: 'dark',  },
+    light: { color: '#fc4838' , background: '#fc4838', border: '1px solid pink' , type: 'light'  }
+};
+
+/* input输入框 - useContext 模式 */
+const Input = (props) => {
+    const  { color, border } = useContext(ThemeContext);
+    const { label , placeholder } = props;
+    return <div>
+        <label style={{ color }} >{ label }</label>
+        <input className="input" placeholder={placeholder}  style={{ border }} />
+    </div>;
+};
+
+/* 容器组件 -  Consumer模式 */
+const Box = (props) => {
+    return <ThemeContext.Consumer>
+        { (themeContextValue) => {
+            const { border, color } = themeContextValue;
+            return <div className="context_box" style={{ border, color }} >
+                { props.children }
+            </div>;
+        } }
+    </ThemeContext.Consumer>;
+};
+
+const Checkbox = (props) => {
+    const { label, name, onChange } = props;
+    const { type, color } = React.useContext(ThemeContext);
+    return <div className="checkbox"  onClick={onChange} >
+        <label htmlFor="name" > {label} </label>
+        <input type="checkbox" id={name} value={type} name={name} checked={ type === name }  style={{ color } } />
+    </div>;
+};
+
+// contextType 模式
+class App extends React.PureComponent {
+    public static contextType = ThemeContext;
+    public render() {
+        const { border, setTheme, color, background} = this.context;
+        return <div className="context_app" style={{ border , color }}  >
+            <div className="context_change_theme"   >
+                <span> 选择主题： </span>
+                <Checkbox label="light"  name="light" onChange={ () => setTheme(theme.light) }  />
+                <Checkbox label="dark" name="dark"  onChange={ () => setTheme(theme.dark) }   />
+            </div>
+            <div className="box_content" >
+                <Box >
+                    <Input label="姓名："  placeholder="请输入姓名"  />
+                    <Input label="age："  placeholder="请输入年龄"  />
+                    <button className="searchbtn" style={ { background } } >确定</button>
+                    <button className="concellbtn" style={ { color } } >取消</button>
+                </Box>
+                <Box >
+                    <HomeOutlined  twoToneColor={ color } />
+                    <SettingFilled twoToneColor={ color }  />
+                    <SmileOutlined twoToneColor={ color }  />
+                    <SyncOutlined spin  twoToneColor={ color }  />
+                    <SmileOutlined twoToneColor={ color }  rotate={180} />
+                    <LoadingOutlined twoToneColor={ color }   />
+                </Box>
+                <Box >
+                    <div className="person_des" style={{ color: '#fff' , background }}  >
+                        I am alien  <br/>
+                        let us learn React!
+                    </div>
+                </Box>
+            </div>
+        </div>;
+    }
+}
+
+export default function() {
+    const [ themeContextValue , setThemeContext ] = React.useState(theme.dark);
+    /* 传递颜色主题 和 改变主题的方法 */
+    return <ThemeContext.Provider value={ { ...themeContextValue, setTheme: setThemeContext  } } >
+        <App/>
+    </ThemeContext.Provider>;
+}
+
+```
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1635746192698-f341abb6-8bcb-4d5b-bbd8-a41f9fae24ba.png)
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1635746210234-ed4651f3-5f5d-4289-96d3-9fb903425580.png)
+
+
+
+## 高阶组件
+
+
+
 
 
 ___
@@ -1500,4 +1624,14 @@ ___
 + 问：React.useEffect 回调函数 和 componentDidMount / componentDidUpdate 执行时机有什么区别 ？
 
   答：useEffect 对 React 执行栈来看是异步执行的，而 componentDidMount / componentDidUpdate 是同步执行的，useEffect代码不会阻塞浏览器绘制。在时机上 ，componentDidMount / componentDidUpdate 和 useLayoutEffect 更类似。
+
+
+
++ **问**：context 与 props 和 react-redux 的对比？
+
+  **答**： context解决了：
+
+  1、解决了 props 需要每一层都手动添加 props 的缺陷。2、解决了改变 value ，组件全部重新渲染的缺陷。
+
+  react-redux 就是通过 Provider 模式把 redux 中的 store 注入到组件中的。
 
