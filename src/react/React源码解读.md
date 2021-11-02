@@ -2025,10 +2025,10 @@ window.app = App();
 
 
 
-## Hooks数据结构
+## useState与useReduer
 
 ```js
-/ mount时的Dispatcher
+// mount时的Dispatcher
 const HooksDispatcherOnMount: Dispatcher = {
   useCallback: mountCallback,
   useContext: readContext,
@@ -2039,7 +2039,7 @@ const HooksDispatcherOnMount: Dispatcher = {
   useReducer: mountReducer,
   useRef: mountRef,
   useState: mountState,
-  // ...省略
+  // ...
 };
 
 // update时的Dispatcher
@@ -2053,7 +2053,7 @@ const HooksDispatcherOnUpdate: Dispatcher = {
   useReducer: updateReducer,
   useRef: updateRef,
   useState: updateState,
-  // ...省略
+  // ...
 };
 ```
 
@@ -2077,3 +2077,223 @@ ReactCurrentDispatcher.current =
 在`FunctionComponent` `render`时，会从`ReactCurrentDispatcher.current`（即当前`dispatcher`）中寻找需要的`hook`。
 
 不同的调用栈上下文为`ReactCurrentDispatcher.current`赋值不同的`dispatcher`，则`FunctionComponent` `render`时调用的`hook`也是不同的函数。
+
+
+
+### memoizedState
+
+>`hook`与`FunctionComponent fiber`都存在`memoizedState`属性，不要混淆他们的概念。
+>
+>+ `fiber.memoizedState`：`FunctionComponent`对应`fiber`保存的`Hooks`链表。
+>+  `hook.memoizedState`：`Hooks`链表中保存的单一`hook`对应的数据。
+
+不同类型`hook`的`memoizedState`保存不同类型数据，具体如下：
+
+- useState：对于`const [state, updateState] = useState(initialState)`，`memoizedState`保存`state`的值
+- useReducer：对于`const [state, dispatch] = useReducer(reducer, {});`，`memoizedState`保存`state`的值
+- useEffect：`memoizedState`保存包含`useEffect回调函数`、`依赖项`等的链表数据结构`effect`，你可以在[这里 (opens new window)](https://github.com/acdlite/react/blob/1fb18e22ae66fdb1dc127347e169e73948778e5a/packages/react-reconciler/src/ReactFiberHooks.new.js#L1181)看到`effect`的创建过程。`effect`链表同时会保存在`fiber.updateQueue`中
+- useRef：对于`useRef(1)`，`memoizedState`保存`{current: 1}`
+- useMemo：对于`useMemo(callback, [depA])`，`memoizedState`保存`[callback(), depA]`
+- useCallback：对于`useCallback(callback, [depA])`，`memoizedState`保存`[callback, depA]`。与`useMemo`的区别是，`useCallback`保存的是`callback`函数本身，而`useMemo`保存的是`callback`函数的执行结果
+
+有些`hook`是没有`memoizedState`的，比如：
+
+- useContext
+
+
+
+### 声明阶段
+
+当`FunctionComponent`进入`render阶段`的`beginWork`时，会调用`renderWithHooks`方法。
+
+该方法内部会执行`FunctionComponent`对应函数（即`fiber.type`）
+
+```js
+function useState(initialState) {
+  var dispatcher = resolveDispatcher();
+  return dispatcher.useState(initialState);
+}
+function useReducer(reducer, initialArg, init) {
+  var dispatcher = resolveDispatcher();
+  return dispatcher.useReducer(reducer, initialArg, init);
+}
+```
+
+#### mount时
+
+`mount`时，`useReducer`会调用`mountReducer`，`useState`会调用`mountState`
+
+```tsx
+function mountState<S>(
+  initialState: (() => S) | S,
+): [S, Dispatch<BasicStateAction<S>>] {
+  // 创建并返回当前的hook
+  const hook = mountWorkInProgressHook();
+
+  // ...赋值初始state
+
+  // 创建queue
+  const queue = (hook.queue = {
+    pending: null,
+    dispatch: null,
+    lastRenderedReducer: basicStateReducer,
+    lastRenderedState: (initialState: any),
+  });
+
+  // ...创建dispatch
+  return [hook.memoizedState, dispatch];
+}
+
+function mountReducer<S, I, A>(
+  reducer: (S, A) => S,
+  initialArg: I,
+  init?: I => S,
+): [S, Dispatch<A>] {
+  // 创建并返回当前的hook
+  const hook = mountWorkInProgressHook();
+
+  // ...赋值初始state
+
+  // 创建queue
+  const queue = (hook.queue = {
+    pending: null,
+    dispatch: null,
+    lastRenderedReducer: reducer,
+    lastRenderedState: (initialState: any),
+  });
+
+  // ...创建dispatch
+  return [hook.memoizedState, dispatch];
+}
+```
+
+`mount`时这两个`Hook`的唯一区别为`queue`参数的`lastRenderedReducer`字段。
+
+```js
+const queue = (hook.queue = {
+  // 保存update对象
+  pending: null,
+  // 保存dispatchAction.bind()的值
+  dispatch: null,
+  // 上一次render时使用的reducer
+  lastRenderedReducer: reducer,
+  // 上一次render时的state
+  lastRenderedState: (initialState: any),
+});
+```
+
+其中，`useReducer`的`lastRenderedReducer`为传入的`reducer`参数。`useState`的`lastRenderedReducer`为`basicStateReducer`。
+
+`basicStateReducer`方法如下：
+
+```js
+function basicStateReducer<S>(state: S, action: BasicStateAction<S>): S {
+  return typeof action === 'function' ? action(state) : action;
+}
+```
+
+可见，`useState`即`reducer`参数为`basicStateReducer`的`useReducer`。
+
+
+
+#### update时
+
+`update`时，`useReducer`与`useState`调用的则是同一个函数`updateReducer `。
+
+```js
+function updateReducer<S, I, A>(
+  reducer: (S, A) => S,
+  initialArg: I,
+  init?: I => S,
+): [S, Dispatch<A>] {
+  // 获取当前hook
+  const hook = updateWorkInProgressHook();
+  const queue = hook.queue;
+  
+  queue.lastRenderedReducer = reducer;
+
+  // ...同update与updateQueue类似的更新逻辑
+
+  const dispatch: Dispatch<A> = (queue.dispatch: any);
+  return [hook.memoizedState, dispatch];
+}
+```
+
+整个流程可以概括为一句话：
+
+> 找到对应的`hook`，根据`update`计算该`hook`的新`state`并返回。
+
+`mount`时获取当前`hook`使用的是`mountWorkInProgressHook`，而`update`时使用的是`updateWorkInProgressHook`，这里的原因是：
+
+- `mount`时可以确定是调用`ReactDOM.render`或相关初始化`API`产生的`更新`，只会执行一次。
+- `update`可能是在事件回调或副作用中触发的`更新`或者是`render阶段`触发的`更新`，为了避免组件无限循环`更新`，后者需要区别对待。
+
+
+
+### 调用阶段
+
+调用阶段会执行`dispatchAction`，此时该`FunctionComponent`对应的`fiber`以及`hook.queue`已经通过调用`bind`方法预先作为参数传入。
+
+```js
+function dispatchAction(fiber, queue, action) {
+
+  // ...创建update
+  var update = {
+    eventTime: eventTime,
+    lane: lane,
+    suspenseConfig: suspenseConfig,
+    action: action,
+    eagerReducer: null,
+    eagerState: null,
+    next: null
+  }; 
+
+  // ...将update加入queue.pending
+  
+  var alternate = fiber.alternate;
+
+  if (fiber === currentlyRenderingFiber$1 || alternate !== null && alternate === currentlyRenderingFiber$1) {
+    // render阶段触发的更新
+    didScheduleRenderPhaseUpdateDuringThisPass = didScheduleRenderPhaseUpdate = true;
+  } else {
+    if (fiber.lanes === NoLanes && (alternate === null || alternate.lanes === NoLanes)) {
+      // ...fiber的updateQueue为空，优化路径
+    }
+
+    scheduleUpdateOnFiber(fiber, lane, eventTime);
+  }
+}
+```
+
+整个过程可以概括为：
+
+> 创建`update`，将`update`加入`queue.pending`中，并开启调度。
+
+这里值得注意的是`if...else...`逻辑，其中：
+
+```js
+if (fiber === currentlyRenderingFiber$1 || alternate !== null && alternate === currentlyRenderingFiber$1)
+```
+
+`currentlyRenderingFiber`即`workInProgress`，`workInProgress`存在代表当前处于`render阶段`。
+
+触发`更新`时通过`bind`预先保存的`fiber`与`workInProgress`全等，代表本次`更新`发生于`FunctionComponent`对应`fiber`的`render阶段`。
+
+所以这是一个`render阶段`触发的`更新`，需要标记变量`didScheduleRenderPhaseUpdate`，后续单独处理。
+
+再来关注：
+
+```js
+if (fiber.lanes === NoLanes && (alternate === null || alternate.lanes === NoLanes))
+```
+
+`fiber.lanes`保存`fiber`上存在的`update`的`优先级`。
+
+`fiber.lanes === NoLanes`意味着`fiber`上不存在`update`。
+
+通过`update`计算`state`发生在`声明阶段`，这是因为该`hook`上可能存在多个不同`优先级`的`update`，最终`state`的值由多个`update`共同决定。
+
+但是当`fiber`上不存在`update`，则`调用阶段`创建的`update`为该`hook`上第一个`update`，在`声明阶段`计算`state`时也只依赖于该`update`，完全不需要进入`声明阶段`再计算`state`。
+
+这样做的好处是：如果计算出的`state`与该`hook`之前保存的`state`一致，那么完全不需要开启一次调度。即使计算出的`state`与该`hook`之前保存的`state`不一致，在`声明阶段`也可以直接使用`调用阶段`已经计算出的`state`。
+
