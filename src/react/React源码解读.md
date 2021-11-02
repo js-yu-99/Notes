@@ -2025,7 +2025,7 @@ window.app = App();
 
 
 
-## useState与useReduer
+### useState与useReduer
 
 ```js
 // mount时的Dispatcher
@@ -2078,9 +2078,7 @@ ReactCurrentDispatcher.current =
 
 不同的调用栈上下文为`ReactCurrentDispatcher.current`赋值不同的`dispatcher`，则`FunctionComponent` `render`时调用的`hook`也是不同的函数。
 
-
-
-### memoizedState
+#### memoizedState
 
 >`hook`与`FunctionComponent fiber`都存在`memoizedState`属性，不要混淆他们的概念。
 >
@@ -2102,7 +2100,7 @@ ReactCurrentDispatcher.current =
 
 
 
-### 声明阶段
+#### 声明阶段
 
 当`FunctionComponent`进入`render阶段`的`beginWork`时，会调用`renderWithHooks`方法。
 
@@ -2119,7 +2117,7 @@ function useReducer(reducer, initialArg, init) {
 }
 ```
 
-#### mount时
+**mount时**
 
 `mount`时，`useReducer`会调用`mountReducer`，`useState`会调用`mountState`
 
@@ -2194,9 +2192,7 @@ function basicStateReducer<S>(state: S, action: BasicStateAction<S>): S {
 
 可见，`useState`即`reducer`参数为`basicStateReducer`的`useReducer`。
 
-
-
-#### update时
+**update时**
 
 `update`时，`useReducer`与`useState`调用的则是同一个函数`updateReducer `。
 
@@ -2230,7 +2226,7 @@ function updateReducer<S, I, A>(
 
 
 
-### 调用阶段
+#### 调用阶段
 
 调用阶段会执行`dispatchAction`，此时该`FunctionComponent`对应的`fiber`以及`hook.queue`已经通过调用`bind`方法预先作为参数传入。
 
