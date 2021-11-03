@@ -2293,3 +2293,198 @@ if (fiber.lanes === NoLanes && (alternate === null || alternate.lanes === NoLane
 
 这样做的好处是：如果计算出的`state`与该`hook`之前保存的`state`一致，那么完全不需要开启一次调度。即使计算出的`state`与该`hook`之前保存的`state`不一致，在`声明阶段`也可以直接使用`调用阶段`已经计算出的`state`。
 
+
+
+### useEffect和useLayoutEffect
+
+```js
+function mountEffect(
+  create: () => (() => void) | void,
+  deps: Array<mixed> | void | null,
+): void {
+    return mountEffectImpl(
+      PassiveEffect | PassiveStaticEffect,
+      HookPassive,
+      create,
+      deps,
+    );
+}
+
+function updateEffect(create, deps) {
+  return updateEffectImpl(PassiveEffect, HookPassive, create, deps);
+}
+
+function mountLayoutEffect(
+  create: () => (() => void) | void,
+  deps: Array<mixed> | void | null,
+): void {
+  return mountEffectImpl(UpdateEffect, HookLayout, create, deps);
+}
+
+function updateLayoutEffect(
+  create: () => (() => void) | void,
+  deps: Array<mixed> | void | null,
+): void {
+  return updateEffectImpl(UpdateEffect, HookLayout, create, deps);
+}
+
+
+function mountEffectImpl(fiberFlags, hookFlags, create, deps) {
+  var hook = mountWorkInProgressHook();
+  var nextDeps = deps === undefined ? null : deps;
+  currentlyRenderingFiber$1.flags |= fiberFlags;
+  hook.memoizedState = pushEffect(HookHasEffect | hookFlags, create, undefined, nextDeps);
+}
+
+function updateEffectImpl(fiberFlags, hookFlags, create, deps) {
+  var hook = updateWorkInProgressHook();
+  var nextDeps = deps === undefined ? null : deps;
+  var destroy = undefined;
+
+  if (currentHook !== null) {
+    var prevEffect = currentHook.memoizedState;
+    destroy = prevEffect.destroy; // 前一个useEffect已经执行完成，可能存在销毁函数，需要在此次更新前执行上一次的销毁函数
+
+    if (nextDeps !== null) {
+      var prevDeps = prevEffect.deps;
+
+       // 确认上次和本次的依赖项是否不同  不过不管是否不同都会追加链表，这是为了保证链表的顺序性
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        pushEffect(hookFlags, create, destroy, nextDeps);
+        return;
+      }
+    }
+  }
+
+  currentlyRenderingFiber$1.flags |= fiberFlags;
+  hook.memoizedState = pushEffect(HookHasEffect | hookFlags, create, destroy, nextDeps);
+}
+
+function pushEffect(tag, create, destroy, deps) {
+  var effect = {
+    tag: tag,
+    create: create, // useEffect 传入的回调函数
+    destroy: destroy, // useEffect 回调函数的返回值-当前更新的销毁函数
+    deps: deps, // useEffect 得第二个参数  回调函数的依赖项
+    // Circular
+    next: null
+  };
+  var componentUpdateQueue = currentlyRenderingFiber$1.updateQueue;
+
+  if (componentUpdateQueue === null) {
+    componentUpdateQueue = createFunctionComponentUpdateQueue();
+    currentlyRenderingFiber$1.updateQueue = componentUpdateQueue;
+    componentUpdateQueue.lastEffect = effect.next = effect;
+  } else {
+    var lastEffect = componentUpdateQueue.lastEffect;
+
+    if (lastEffect === null) {
+      componentUpdateQueue.lastEffect = effect.next = effect;
+    } else {
+      var firstEffect = lastEffect.next;
+      lastEffect.next = effect;
+      effect.next = firstEffect;
+      componentUpdateQueue.lastEffect = effect;
+    }
+  }
+
+  return effect;
+}
+```
+
+#### flushPassiveEffects
+
+`flushPassiveEffects`内部会设置`优先级`，并执行`flushPassiveEffectsImpl`。
+
+`flushPassiveEffectsImpl`主要做三件事：
+
+- 调用该`useEffect`在上一次`render`时的销毁函数
+- 调用该`useEffect`在本次`render`时的回调函数
+- 如果存在同步任务，不需要等待下次`事件循环`的`宏任务`，提前执行他
+
+
+
+**阶段一：销毁函数的执行**
+
+`useEffect`的执行需要保证所有组件`useEffect`的`销毁函数`必须都执行完后才能执行任意一个组件的`useEffect`的`回调函数`。
+
+这是因为多个`组件`间可能共用同一个`ref`。
+
+如果不是按照“全部销毁”再“全部执行”的顺序，那么在某个组件`useEffect`的`销毁函数`中修改的`ref.current`可能影响另一个组件`useEffect`的`回调函数`中的同一个`ref`的`current`属性。
+
+在`useLayoutEffect`中也有同样的问题，所以他们都遵循“全部销毁”再“全部执行”的顺序。
+
+在阶段一，会遍历并执行所有`useEffect`的`销毁函数`。
+
+```js
+// pendingPassiveHookEffectsUnmount中保存了所有需要执行销毁的useEffect
+const unmountEffects = pendingPassiveHookEffectsUnmount;
+  pendingPassiveHookEffectsUnmount = [];
+  for (let i = 0; i < unmountEffects.length; i += 2) {
+    const effect = ((unmountEffects[i]: any): HookEffect);
+    const fiber = ((unmountEffects[i + 1]: any): Fiber);
+    const destroy = effect.destroy;
+    effect.destroy = undefined;
+
+    if (typeof destroy === 'function') {
+      // 销毁函数存在则执行
+      try {
+        destroy();
+      } catch (error) {
+        captureCommitPhaseError(fiber, error);
+      }
+    }
+  }
+```
+
+其中`pendingPassiveHookEffectsUnmount`数组的索引`i`保存需要销毁的`effect`，`i+1`保存该`effect`对应的`fiber`。
+
+向`pendingPassiveHookEffectsUnmount`数组内`push`数据的操作发生在`layout`阶段`commitLayoutEffectOnFiber`方法内部的`schedulePassiveEffects`方法中。
+
+```js
+function schedulePassiveEffects(finishedWork: Fiber) {
+  const updateQueue: FunctionComponentUpdateQueue | null = (finishedWork.updateQueue: any);
+  const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
+  if (lastEffect !== null) {
+    const firstEffect = lastEffect.next;
+    let effect = firstEffect;
+    do {
+      const {next, tag} = effect;
+      if (
+        (tag & HookPassive) !== NoHookEffect &&
+        (tag & HookHasEffect) !== NoHookEffect
+      ) {
+        // 向`pendingPassiveHookEffectsUnmount`数组内`push`要销毁的effect
+        enqueuePendingPassiveHookEffectUnmount(finishedWork, effect);
+        // 向`pendingPassiveHookEffectsMount`数组内`push`要执行回调的effect
+        enqueuePendingPassiveHookEffectMount(finishedWork, effect);
+      }
+      effect = next;
+    } while (effect !== firstEffect);
+  }
+}
+```
+
+**阶段二：回调函数的执行**
+
+与阶段一类似，同样遍历数组，执行对应`effect`的`回调函数`。
+
+其中向`pendingPassiveHookEffectsMount`中`push`数据的操作同样发生在`schedulePassiveEffects`中。
+
+```js
+// pendingPassiveHookEffectsMount中保存了所有需要执行回调的useEffect
+const mountEffects = pendingPassiveHookEffectsMount;
+pendingPassiveHookEffectsMount = [];
+for (let i = 0; i < mountEffects.length; i += 2) {
+  const effect = ((mountEffects[i]: any): HookEffect);
+  const fiber = ((mountEffects[i + 1]: any): Fiber);
+  
+  try {
+    const create = effect.create;
+   effect.destroy = create();
+  } catch (error) {
+    captureCommitPhaseError(fiber, error);
+  }
+}
+```
+
