@@ -2488,3 +2488,171 @@ for (let i = 0; i < mountEffects.length; i += 2) {
 }
 ```
 
+
+
+### useRef
+
+```js
+function mountRef<T>(initialValue: T): {|current: T|} {
+  // 获取当前useRef hook
+  const hook = mountWorkInProgressHook();
+  // 创建ref
+  const ref = {current: initialValue};
+  hook.memoizedState = ref;
+  return ref;
+}
+
+function updateRef<T>(initialValue: T): {|current: T|} {
+  // 获取当前useRef hook
+  const hook = updateWorkInProgressHook();
+  // 返回保存的数据
+  return hook.memoizedState;
+}
+                                         
+export function createRef(): RefObject {
+  const refObject = {
+    current: null,
+  };
+  return refObject;
+}
+```
+
+`useRef`仅仅是返回一个包含`current`属性的对象。
+
+
+
+`ref`的工作流程分为两部分：
+
+- `render阶段`为含有`ref`属性的`fiber`添加`Ref effectTag`
+- `commit阶段`为包含`Ref effectTag`的`fiber`执行对应操作
+
+#### render阶段
+
+```js
+// beginWork的markRef
+function markRef(current: Fiber | null, workInProgress: Fiber) {
+  const ref = workInProgress.ref;
+  if (
+    (current === null && ref !== null) ||
+    (current !== null && current.ref !== ref)
+  ) {
+    // Schedule a Ref effect
+    workInProgress.effectTag |= Ref;
+  }
+}
+// completeWork的markRef
+function markRef(workInProgress: Fiber) {
+  workInProgress.effectTag |= Ref;
+}
+```
+
+在`beginWork`中，如下两处调用了`markRef`：
+
+- `updateClassComponent`内的`finishClassComponent` ，对应`ClassComponent`
+
+- `updateHostComponent` ，对应`HostComponent`
+
+在`completeWork`中，如下两处调用了`markRef`：
+
+- `completeWork`中的HostComponent 类型
+- `completeWork`中的ScopeComponent类型
+
+总结下`组件`对应`fiber`被赋值`Ref effectTag`需要满足的条件：
+
+- `fiber`类型为`HostComponent`、`ClassComponent`、`ScopeComponent`
+- 对于`mount`，`workInProgress.ref !== null`，即存在`ref`属性
+- 对于`update`，`current.ref !== workInProgress.ref`，即`ref`属性改变
+
+
+
+#### commit阶段
+
+
+在`commit阶段`的`mutation阶段`中，对于`ref`属性改变的情况，需要先移除之前的`ref`。
+
+```js
+function commitMutationEffects(root: FiberRoot, renderPriorityLevel) {
+  while (nextEffect !== null) {
+
+    const effectTag = nextEffect.effectTag;
+    // ...
+
+    if (effectTag & Ref) {
+      const current = nextEffect.alternate;
+      if (current !== null) {
+        // 移除之前的ref
+        commitDetachRef(current);
+      }
+    }
+    // ...
+  }
+  // ...
+  
+function commitDetachRef(current: Fiber) {
+  const currentRef = current.ref;
+  if (currentRef !== null) {
+    if (typeof currentRef === 'function') {
+      // function类型ref，调用他，传参为null
+      currentRef(null);
+    } else {
+      // 对象类型ref，current赋值为null
+      currentRef.current = null;
+    }
+  }
+}
+```
+
+
+
+接下来，在`mutation阶段`，对于`Deletion effectTag`的`fiber`（对应需要删除的`DOM节点`），需要递归他的子树，对子孙`fiber`的`ref`执行类似`commitDetachRef`的操作。
+
+在`commitDeletion`——`unmountHostComponents`——`commitUnmount`——`ClassComponent | HostComponent`类型`case`中调用的`safelyDetachRef`方法负责执行类似`commitDetachRef`的操作。
+
+```js
+function safelyDetachRef(current: Fiber) {
+  const ref = current.ref;
+  if (ref !== null) {
+    if (typeof ref === 'function') {
+      try {
+        ref(null);
+      } catch (refError) {
+        captureCommitPhaseError(current, refError);
+      }
+    } else {
+      ref.current = null;
+    }
+  }
+}
+```
+
+接下来进入`ref`的赋值阶段。
+
+> `commitLayoutEffect`会执行`commitAttachRef`（赋值`ref`）
+
+```js
+function commitAttachRef(finishedWork: Fiber) {
+  const ref = finishedWork.ref;
+  if (ref !== null) {
+    // 获取ref属性对应的Component实例
+    const instance = finishedWork.stateNode;
+    let instanceToUse;
+    switch (finishedWork.tag) {
+      case HostComponent:
+        instanceToUse = getPublicInstance(instance);
+        break;
+      default:
+        instanceToUse = instance;
+    }
+
+    // 赋值ref
+    if (typeof ref === 'function') {
+      ref(instanceToUse);
+    } else {
+      ref.current = instanceToUse;
+    }
+  }
+}
+```
+
+至此，`ref`的工作流程完毕。
+
