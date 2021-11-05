@@ -1584,9 +1584,96 @@ export default function() {
 
 
 
-## 高阶组件
+## 渲染控制
+
+### render阶段
+
+render的作用是根据一次更新中产生的新状态值，通过React.createElement，替换成新的状态，得到新的React element对象，新的element对象上，保存了最新状态值。createElement会产生一个全新的props。
+
+接下来，React会调和由render函数产生children，将子代element变成fiber，将props变成pendingProps，至此当前组件更新变比。然后如果children是组件，会继续重复上一步，直到全部fiber调和完毕。完成render阶段。
 
 
+
+### React控制render的方法
+
+- 第一种就是从父组件直接隔断子组件的渲染，经典的就是 memo，缓存 element 对象。
+- 第二种就是组件从自身来控制是否 render ，比如：PureComponent ，shouldComponentUpdate 。
+
+#### useMemo
+
+```js
+const cacheSomething = useMemo(create,deps)
+```
+
+- `create`：第一个参数为一个函数，函数的返回值作为缓存值，如上 demo 中把 Children 对应的 element 对象，缓存起来。
+- `deps`： 第二个参数为一个数组，存放当前 useMemo 的依赖项，在函数组件下一次执行的时候，会对比 deps 依赖项里面的状态，是否有改变，如果有改变重新执行 create ，得到新的缓存值。
+- `cacheSomething`：返回值，执行 create 的返回值。如果 deps 中有依赖项改变，返回的重新执行 create 产生的值，否则取上一次缓存值。
+
+**useMemo原理：**
+
+useMemo 会记录上一次执行 create 的返回值，并把它绑定在函数组件对应的 fiber 对象上，只要组件不销毁，缓存值就一直存在，但是 deps 中如果有一项改变，就会重新执行 create ，返回值作为新的值记录到 fiber 对象上。
+
+**useMemo应用场景：**
+
+- 可以缓存 element 对象，从而达到按条件渲染组件，优化性能的作用。
+- 如果组件中不期望每次 render 都重新计算一些值,可以利用 useMemo 把它缓存起来。
+- 可以把函数和属性缓存起来，作为 PureComponent 的绑定方法，或者配合其他Hooks一起使用。
+
+
+
+#### PureComponent
+
+- 对于 props ，PureComponent 会浅比较 props 是否发生改变，再决定是否渲染组件，所以只有点击 numberA 才会促使组件重新渲染。
+- 对于 state ，如上也会浅比较处理，当上述触发 ‘ state 相同情况’ 按钮时，组件没有渲染。
+- 浅比较只会比较基础数据类型，对于引用类型，比如 demo 中 state 的 obj ，单纯的改变 obj 下属性是不会促使组件更新的，因为浅比较两次 obj 还是指向同一个内存空间，想要解决这个问题也容易，浅拷贝就可以解决。这样就是重新创建了一个 obj ，所以浅比较会不相等，组件就会更新了。
+
+pureComponent原型链上存在属性isPureReactComponent
+
+```js
+function checkShouldComponentUpdate(){
+     if (typeof instance.shouldComponentUpdate === 'function') {
+         return instance.shouldComponentUpdate(newProps,newState,nextContext)  /* shouldComponentUpdate 逻辑 */
+     } 
+    if (ctor.prototype && ctor.prototype.isPureReactComponent) {
+        return  !shallowEqual(oldProps, newProps) || !shallowEqual(oldState, newState)
+    }
+}
+```
+
+- isPureReactComponent 就是判断当前组件是不是纯组件的，如果是 PureComponent 会浅比较 props 和 state 是否相等。
+- 还有一点值得注意的就是 shouldComponentUpdate 的权重，会大于 PureComponent。
+
+shallowEqual 浅比较流程：
+
+- 第一步，首先会直接比较新老 props 或者新老 state 是否相等。如果相等那么不更新组件。
+- 第二步，判断新老 state 或者 props ，有不是对象，或者为 null 的，那么直接返回 false ，更新组件。
+- 第三步，通过 Object.keys 将新老 props 或者新老 state 的属性名 key 变成数组，判断数组的长度是否相等，如果不相等，证明有属性增加或者减少，那么更新组件。
+- 第四步，遍历老 props 或者老 state ，判断对应的新 props 或新 state ，有没有与之对应并且相等的（这个相等是浅比较），如果有一个不对应或者不相等，那么直接返回 false ，更新组件。
+
+**PureComponent注意事项**
+
+1. 避免使用箭头函数。不要给是 PureComponent 子组件绑定箭头函数，因为父组件每一次 render ，如果是箭头函数绑定的话，都会重新生成一个新的箭头函数， PureComponent 对比新老 props 时候，因为是新的函数，所以会判断不想等，而让组件直接渲染，PureComponent 作用终会失效。
+2. PureComponent 的父组件是函数组件的情况，绑定函数要用 useCallback 或者 useMemo 处理。这种情况还是很容易发生的，就是在用 class + function 组件开发项目的时候，如果父组件是函数，子组件是 PureComponent ，那么绑定函数要小心，因为函数组件每一次执行，如果不处理，还会声明一个新的函数，所以 PureComponent 对比同样会失效，
+
+
+
+#### shouldComponentUpdate
+
+shouldComponentUpdate 可以根据传入的新的 props 和 state ，或者 newContext 来确定是否更新组件
+
+
+
+#### React.memo
+
+React.memo 可作为一种容器化的控制渲染方案，可以对比 props 变化，来决定是否渲染组件，首先先来看一下 memo 的基本用法。React.memo 接受两个参数，第一个参数 Component 原始组件本身，第二个参数 compare 是一个函数，可以根据一次更新中 props 是否相同决定原始组件是否重新渲染。
+
+memo的几个特点是：
+
+- React.memo: 第二个参数 返回 true 组件不渲染 ， 返回 false 组件重新渲染。和 shouldComponentUpdate 相反，shouldComponentUpdate : 返回 true 组件渲染 ， 返回 false 组件不渲染。
+- memo 当二个参数 compare 不存在时，会用**浅比较原则**处理 props ，相当于仅比较 props 版本的 pureComponent 。
+- memo 同样适合类组件和函数组件。
+
+被 memo 包裹的组件，element 会被打成 `REACT_MEMO_TYPE` 类型的 element 标签，在 element 变成 fiber 的时候， fiber 会被标记成 MemoComponent 的类型。
 
 
 
