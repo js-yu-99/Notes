@@ -2763,3 +2763,54 @@ function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
 }
 ```
 
+
+
+## Concurrent Mode
+
+ 
+
+### Scheduler
+
+#### 时间切片
+
+`时间切片`的本质是模拟实现requestIdleCallback。
+
+```js
+一个task(宏任务) -- 队列中全部job(微任务) -- requestAnimationFrame -- 浏览器重排/重绘 -- requestIdleCallback
+```
+
+`requestIdleCallback`是在“浏览器重排/重绘”后如果当前帧还有空余时间时被调用的。
+
+浏览器并没有提供其他`API`能够在同样的时机（浏览器重排/重绘后）调用以模拟其实现。
+
+唯一能精准控制调用时机的`API`是`requestAnimationFrame`，能让我们在“浏览器重排/重绘”之前执行`JS`。
+
+这也是为什么通常用这个`API`实现`JS`动画 —— 这是浏览器渲染前的最后时机，所以动画能快速被渲染。
+
+所以，退而求其次，`Scheduler`的`时间切片`功能是通过`task`（宏任务）实现的
+
+最常见的`task`当属`setTimeout`了。但是有个`task`比`setTimeout`执行时机更靠前，那就是`MessageChannel`。
+
+所以`Scheduler`将需要被执行的回调函数作为`MessageChannel`的回调执行。如果当前宿主环境不支持`MessageChannel`，则使用`setTimeout`。
+
+在`React`的`render`阶段，开启`Concurrent Mode`时，每次遍历前，都会通过`Scheduler`提供的`shouldYield`方法判断是否需要中断遍历，使浏览器有时间渲染：
+
+```js
+function workLoopConcurrent() {
+  // Perform work until Scheduler asks us to yield
+  while (workInProgress !== null && !shouldYield()) {
+    performUnitOfWork(workInProgress);
+  }
+}
+```
+
+是否中断的依据，最重要的一点便是每个任务的剩余时间是否用完。
+
+在`Schdeduler`中，为任务分配的初始剩余时间为`5ms`。
+
+随着应用运行，会通过`fps`动态调整分配给任务的可执行时间。
+
+
+
+
+
