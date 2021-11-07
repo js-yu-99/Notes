@@ -2812,5 +2812,54 @@ function workLoopConcurrent() {
 
 
 
+#### 优先级调度
 
+`Scheduler`是独立于`React`的包，所以他的`优先级`也是独立于`React`的`优先级`的。
+
+`Scheduler`对外暴露了一个方法unstable_runWithPriority。
+
+这个方法接受一个`优先级`与一个`回调函数`，在`回调函数`内部调用获取`优先级`的方法都会取得第一个参数对应的`优先级`：
+
+```js
+function unstable_runWithPriority(priorityLevel, eventHandler) {
+  switch (priorityLevel) {
+    case ImmediatePriority:
+    case UserBlockingPriority:
+    case NormalPriority:
+    case LowPriority:
+    case IdlePriority:
+      break;
+    default:
+      priorityLevel = NormalPriority;
+  }
+
+  var previousPriorityLevel = currentPriorityLevel;
+  currentPriorityLevel = priorityLevel;
+
+  try {
+    return eventHandler();
+  } finally {
+    currentPriorityLevel = previousPriorityLevel;
+  }
+}
+```
+
+可以看到，`Scheduler`内部存在5种优先级。
+
+在`React`内部凡是涉及到`优先级`调度的地方，都会使用`unstable_runWithPriority`。
+
+比如，`commit`阶段是同步执行的。`commit`阶段的起点`commitRoot`方法的优先级为`ImmediateSchedulerPriority`。
+
+`ImmediateSchedulerPriority`即`ImmediatePriority`的别名，为最高优先级，会立即执行。
+
+```js
+function commitRoot(root) {
+  const renderPriorityLevel = getCurrentPriorityLevel();
+  runWithPriority(
+    ImmediateSchedulerPriority,
+    commitRootImpl.bind(null, root, renderPriorityLevel),
+  );
+  return null;
+}
+```
 
