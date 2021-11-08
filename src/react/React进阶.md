@@ -1675,6 +1675,92 @@ memo的几个特点是：
 
 被 memo 包裹的组件，element 会被打成 `REACT_MEMO_TYPE` 类型的 element 标签，在 element 变成 fiber 的时候， fiber 会被标记成 MemoComponent 的类型。
 
+- memo 主要逻辑是
+
+  
+
+  - 通过 memo 第二个参数，判断是否执行更新，如果没有那么第二个参数，那么以浅比较 props 为 diff 规则。如果相等，当前 fiber 完成工作，停止向下调和节点，所以被包裹的组件即将不更新。
+  - memo 可以理解为包了一层的高阶组件，它的阻断更新机制，是通过控制下一级 children ，也就是 memo 包装的组件，是否继续调和渲染，来达到目的的。
+
+  
+
+  #### 打破渲染限制
+
+  - 1 forceUpdate。类组件更新如果调用的是 forceUpdate 而不是 setState ，会跳过 PureComponent 的浅比较和 shouldComponentUpdate 自定义比较。其原理是组件中调用 forceUpdate 时候，全局会开启一个 hasForceUpdate 的开关。当组件更新的时候，检查这个开关是否打开，如果打开，就直接跳过 shouldUpdate 。
+  - 2 context穿透，上述的几种方式，都不能本质上阻断 context 改变，而带来的渲染穿透，所以开发者在使用 Context 要格外小心，既然选择了消费 context ，就要承担 context 改变，带来的更新作用。
+
+  #### 渲染控制流程图
+
+  
+
+  ![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1636348038819-c8f95cc8-7ef7-41ac-b871-dac0bc0e1550.png)
+
+  
+
+  #### 什么时候需要注意控制渲染
+
+  - 第一种情况数据可视化的模块组件（展示了大量的数据），这种情况比较小心因为一次更新，可能伴随大量的 diff ，数据量越大也就越浪费性能，所以对于数据展示模块组件，有必要采取 memo ， shouldComponentUpdate 等方案控制自身组件渲染。
+  - 第二种情况含有大量表单的页面，React 一般会采用受控组件的模式去管理表单数据层，表单数据层完全托管于 props 或是 state ，而用户操作表单往往是频繁的，需要频繁改变数据层，所以很有可能让整个页面组件高频率 render 。
+
+  - 第三种情况就是越是靠近 app root 根组件越值得注意，根组件渲染会波及到整个组件树重新 render ，子组件 render ，一是浪费性能，二是可能执行 useEffect ，componentWillReceiveProps 等钩子，造成意想不到的情况发生。
+
+  
+
+  ## 渲染调优
+
+  ### Suspense 异步渲染
+
+  Suspense 是 React 提出的一种同步的代码来实现异步操作的方案。Suspense 让组件‘等待’异步操作，异步请求结束后在进行组件的渲染，也就是所谓的异步渲染，但是这个功能目前还在实验阶段，相信不久这种异步渲染的方式就能和大家见面了。
+
+  **Suspense 用法**
+
+  Suspense 是组件，有一个 fallback 属性，用来代替当 Suspense 处于 loading 状态下渲染的内容，Suspense 的 children 就是异步组件。多个异步组件可以用 Suspense 嵌套使用。
+
+  ```
+  // 子组件
+  function UserInfo() {
+    // 获取用户数据信息，然后再渲染组件。
+    const user = getUserInfo();
+    return <h1>{user.name}</h1>;
+  }
+  // 父组件
+  export default function Index(){
+      return <Suspense fallback={<h1>Loading...</h1>}>
+          <UserInfo/>
+      </Suspense>
+  }
+  ```
+
+  - Suspense 包裹异步渲染组件 UserInfo ，当 UserInfo 处于数据加载状态下，展示 Suspense 中 fallback 的内容。
+
+  传统模式：挂载组件-> 请求数据 -> 再渲染组件。
+  异步模式：请求数据-> 渲染组件。
+
+  异步渲染相比传统数据交互相比好处：
+
+  - 不再需要 componentDidMount 或 useEffect 配合做数据交互，也不会因为数据交互后，改变 state 而产生的二次更新作用。
+  - 代码逻辑更简单，清晰。
+
+  
+
+  ### React.lazy 动态加载（懒加载）
+
+  React.lazy 接受一个函数，这个函数需要动态调用 import() 。它必须返回一个 Promise ，该 Promise 需要 resolve 一个 default export 的 React 组件。
+
+  ```
+  const LazyComponent = React.lazy(() => import('./test.js'))
+  
+  export default function Index(){
+     return <Suspense fallback={<div>loading...</div>} >
+         <LazyComponent />
+     </Suspense>
+  }
+  ```
+
+  - 用 React.lazy 动态引入 test.js 里面的组件，配合 Suspense 实现动态加载组件效果。**这样很利于代码分割，不会让初始化的时候加载大量的文件。**
+
+
+
 
 
 ___
