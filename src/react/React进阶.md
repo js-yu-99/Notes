@@ -1704,60 +1704,174 @@ memo的几个特点是：
 
   - 第三种情况就是越是靠近 app root 根组件越值得注意，根组件渲染会波及到整个组件树重新 render ，子组件 render ，一是浪费性能，二是可能执行 useEffect ，componentWillReceiveProps 等钩子，造成意想不到的情况发生。
 
-  
 
-  ## 渲染调优
 
-  ### Suspense 异步渲染
+## 渲染调优
 
-  Suspense 是 React 提出的一种同步的代码来实现异步操作的方案。Suspense 让组件‘等待’异步操作，异步请求结束后在进行组件的渲染，也就是所谓的异步渲染，但是这个功能目前还在实验阶段，相信不久这种异步渲染的方式就能和大家见面了。
+### Suspense 异步渲染
 
-  **Suspense 用法**
+Suspense 是 React 提出的一种同步的代码来实现异步操作的方案。Suspense 让组件‘等待’异步操作，异步请求结束后在进行组件的渲染，也就是所谓的异步渲染，但是这个功能目前还在实验阶段，相信不久这种异步渲染的方式就能和大家见面了。
 
-  Suspense 是组件，有一个 fallback 属性，用来代替当 Suspense 处于 loading 状态下渲染的内容，Suspense 的 children 就是异步组件。多个异步组件可以用 Suspense 嵌套使用。
+**Suspense 用法**
 
-  ```
-  // 子组件
-  function UserInfo() {
-    // 获取用户数据信息，然后再渲染组件。
-    const user = getUserInfo();
-    return <h1>{user.name}</h1>;
+Suspense 是组件，有一个 fallback 属性，用来代替当 Suspense 处于 loading 状态下渲染的内容，Suspense 的 children 就是异步组件。多个异步组件可以用 Suspense 嵌套使用。
+
+```
+// 子组件
+function UserInfo() {
+  // 获取用户数据信息，然后再渲染组件。
+  const user = getUserInfo();
+  return <h1>{user.name}</h1>;
+}
+// 父组件
+export default function Index(){
+    return <Suspense fallback={<h1>Loading...</h1>}>
+        <UserInfo/>
+    </Suspense>
+}
+```
+
+- Suspense 包裹异步渲染组件 UserInfo ，当 UserInfo 处于数据加载状态下，展示 Suspense 中 fallback 的内容。
+
+传统模式：挂载组件-> 请求数据 -> 再渲染组件。
+异步模式：请求数据-> 渲染组件。
+
+异步渲染相比传统数据交互相比好处：
+
+- 不再需要 componentDidMount 或 useEffect 配合做数据交互，也不会因为数据交互后，改变 state 而产生的二次更新作用。
+- 代码逻辑更简单，清晰。
+
+
+
+**Suspense原理：** 
+
+Suspense 在执行内部可以通过 try{}catch{} 方式捕获异常，这个异常通常是一个 Promise ，可以在这个 Promise 中进行数据请求工作，Suspense 内部会处理这个 Promise ，Promise 结束后，Suspense 会再一次重新 render 把数据渲染出来，达到异步渲染的效果。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1636363679271-eaf35ccb-5484-4a69-ac9e-97ce43ae51e8.png)
+
+
+
+### React.lazy 动态加载（懒加载）
+
+React.lazy 接受一个函数，这个函数需要动态调用 import() 。它必须返回一个 Promise ，该 Promise 需要 resolve 一个 default export 的 React 组件。
+
+```
+const LazyComponent = React.lazy(() => import('./test.js'))
+
+export default function Index(){
+   return <Suspense fallback={<div>loading...</div>} >
+       <LazyComponent />
+   </Suspense>
+}
+```
+
+- 用 React.lazy 动态引入 test.js 里面的组件，配合 Suspense 实现动态加载组件效果。**这样很利于代码分割，不会让初始化的时候加载大量的文件。**
+
+
+
+**React.lazy原理：**
+
+lazy 内部模拟一个 promiseA 规范场景。完全可以理解 React.lazy 用 Promise 模拟了一个请求数据的过程，但是请求的结果不是数据，而是一个动态的组件。下一次渲染就直接渲染这个组件，所以是 React.lazy 利用 Suspense **接收 Promise ，执行 Promise ，然后再渲染**这个特性做到动态加载的。
+
+```
+function lazy(ctor){
+    return {
+         $$typeof: REACT_LAZY_TYPE,
+         _payload:{
+            _status: -1,  //初始化状态
+            _result: ctor,
+         },
+         _init:function(payload){
+             if(payload._status===-1){ /* 第一次执行会走这里  */
+                const ctor = payload._result;
+                const thenable = ctor();
+                payload._status = Pending;
+                payload._result = thenable;
+                thenable.then((moduleObject)=>{
+                    const defaultExport = moduleObject.default;
+                    resolved._status = Resolved; // 1 成功状态
+                    resolved._result = defaultExport;/* defaultExport 为我们动态加载的组件本身  */ 
+                })
+             }
+            if(payload._status === Resolved){ // 成功状态
+                return payload._result;
+            }
+            else {  //第一次会抛出Promise异常给Suspense
+                throw payload._result; 
+            }
+         }
+    }
+}
+```
+
+整个流程是，React.lazy 包裹的组件会标记 REACT_LAZY_TYPE 类型的 element，在调和阶段会变成 LazyComponent 类型的 fiber ，React 对 LazyComponent 会有单独的处理逻辑：
+
+- 第一次渲染首先会执行 init 方法，里面会执行 lazy 的第一个函数，得到一个Promise，绑定 Promise.then 成功回调，回调里得到将要渲染组件 defaultExport ，当第二个 if 判断的时候，因为此时状态不是 Resolved ，所以会走 else ，抛出异常 Promise，抛出异常会让当前渲染终止。
+- 这个异常 Promise 会被 Suspense 捕获到，Suspense 会处理 Promise ，Promise 执行成功回调得到 defaultExport（将想要渲染组件），然后 Susponse 发起第二次渲染，第二次 init 方法已经是 Resolved 成功状态，那么直接返回 result 也就是真正渲染的组件。这时候就可以正常渲染组件了。
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1636364074927-1fa7ffee-c258-47e7-92f3-27fe67c8f8f7.png)
+
+### 渲染错误边界
+
+#### componentDidCatch
+
+componentDidCatch 可以捕获异常，它接受两个参数：
+
+- 1 error —— 抛出的错误。
+- 2 info —— 带有 componentStack key 的对象，其中包含有关组件引发错误的栈信息。
+
+componentDidCatch 中可以再次触发 setState，来降级UI渲染，componentDidCatch() 会在commit阶段被调用，因此允许执行副作用。
+
+```
+public componentDidCatch(error) {
+  this.sendErrorInfo(error);
+  this.setState({ hasError: true });
+}
+
+public render(): React.ReactNode {
+  if (this.state.hasError) {
+    // You can render any custom fallback UI
+    return <Empty
+             image={ Empty.PRESENTED_IMAGE_SIMPLE }
+             description={
+        <div>抱歉，组件出现未知错误，请点击刷新按钮重新加载。<br/>
+          <Button onClick={ this.onClick } type={'primary'} style={{marginTop: '10px'}}>
+            刷新
+          </Button>
+        </div>
+      }
+             />;
   }
-  // 父组件
-  export default function Index(){
-      return <Suspense fallback={<h1>Loading...</h1>}>
-          <UserInfo/>
-      </Suspense>
-  }
-  ```
+  return <>
+    { this.props.children }
+    </>;
+}
+```
 
-  - Suspense 包裹异步渲染组件 UserInfo ，当 UserInfo 处于数据加载状态下，展示 Suspense 中 fallback 的内容。
+componentDidCatch 作用：
 
-  传统模式：挂载组件-> 请求数据 -> 再渲染组件。
-  异步模式：请求数据-> 渲染组件。
+- 可以调用 setState 促使组件渲染，并做一些错误拦截功能。
+- 监控组件，发生错误，上报错误日志。
 
-  异步渲染相比传统数据交互相比好处：
 
-  - 不再需要 componentDidMount 或 useEffect 配合做数据交互，也不会因为数据交互后，改变 state 而产生的二次更新作用。
-  - 代码逻辑更简单，清晰。
 
-  
+#### static getDerivedStateFromError
 
-  ### React.lazy 动态加载（懒加载）
+React更期望用 getDerivedStateFromError 代替 componentDidCatch 用于处理渲染异常的情况。getDerivedStateFromError 是静态方法，内部不能调用 setState。getDerivedStateFromError 返回的值可以合并到 state，作为渲染使用。用 getDerivedStateFromError 解决如上的情况。
 
-  React.lazy 接受一个函数，这个函数需要动态调用 import() 。它必须返回一个 Promise ，该 Promise 需要 resolve 一个 default export 的 React 组件。
+```
+state={
+  hasError:false
+}  
+static getDerivedStateFromError(){
+  return { hasError:true }
+}
+render(){  
+  /* 如上 */
+}
+```
 
-  ```
-  const LazyComponent = React.lazy(() => import('./test.js'))
-  
-  export default function Index(){
-     return <Suspense fallback={<div>loading...</div>} >
-         <LazyComponent />
-     </Suspense>
-  }
-  ```
-
-  - 用 React.lazy 动态引入 test.js 里面的组件，配合 Suspense 实现动态加载组件效果。**这样很利于代码分割，不会让初始化的时候加载大量的文件。**
+注意事项： 如果存在 getDerivedStateFromError 生命周期钩子，那么将不需要 componentDidCatch 生命周期再降级 ui。
 
 
 
