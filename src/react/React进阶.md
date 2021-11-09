@@ -1875,6 +1875,125 @@ render(){
 
 
 
+### 多节点Diff中key的重要性
+
+### diff children流程
+
+**第一步：遍历新 children ，复用 oldFiber**
+
+> react-reconciler/src/ReactChildFiber.js
+
+```js
+function reconcileChildrenArray(){
+    /* 第一步  */
+    for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {  
+        if (oldFiber.index > newIdx) {
+            nextOldFiber = oldFiber;
+            oldFiber = null;
+        } else {
+            nextOldFiber = oldFiber.sibling;
+        }
+        const newFiber = updateSlot(returnFiber,oldFiber,newChildren[newIdx],expirationTime,);
+        if (newFiber === null) { break }
+        // ..一些其他逻辑
+        }  
+        if (shouldTrackSideEffects) {  // shouldTrackSideEffects 为更新流程。
+            if (oldFiber && newFiber.alternate === null) { /* 找到了与新节点对应的fiber，但是不能复用，那么直接删除老节点 */
+                deleteChild(returnFiber, oldFiber);
+            }
+        }
+    }
+}
+```
+
+- 第一步对于 React.createElement 产生新的 child 组成的数组，首先会遍历数组，因为 fiber 对于同一级兄弟节点是用 sibling 指针指向，所以在遍历children 遍历，sibling 指针同时移动，找到与 child 对应的 oldFiber 。
+- 然后通过调用 updateSlot ，updateSlot 内部会判断当前的 tag 和 key 是否匹配，如果匹配复用老 fiber 形成新的 fiber ，如果不匹配，返回 null ，此时 newFiber 等于 null 。
+- 如果是处于更新流程，找到与新节点对应的老 fiber ，但是不能复用 `alternate === null `，那么会删除老 fiber 。
+
+**第二步：统一删除oldfiber**
+
+```js
+if (newIdx === newChildren.length) {
+    deleteRemainingChildren(returnFiber, oldFiber);
+    return resultingFirstChild;
+}
+```
+
+- 第二步适用于以下情况，当第一步结束完 `newIdx === newChildren.length` 此时证明所有 newChild 已经全部被遍历完，那么剩下没有遍历 oldFiber 也就没有用了，那么调用 deleteRemainingChildren 统一删除剩余 oldFiber 。
+
+情况一：节点删除
+
+- **oldChild: A B C D**
+- **newChild: A B**
+
+A , B 经过第一步遍历复制完成，那么 newChild 遍历完成，此时 C D 已经没有用了，那么统一删除 C D。
+
+**第三步：统一创建newFiber**
+
+```js
+if(oldFiber === null){
+   for (; newIdx < newChildren.length; newIdx++) {
+       const newFiber = createChild(returnFiber,newChildren[newIdx],expirationTime,)
+       // ...
+   }
+}
+```
+
+- 第三步适合如下的情况，当经历过第一步，oldFiber 为 null ， 证明 oldFiber 复用完毕，那么如果还有新的 children ，说明都是新的元素，只需要调用 createChild 创建新的 fiber 。
+
+情况二：节点增加
+
+- **oldChild: A B**
+- **newChild: A B C D**
+
+A B 经过第一步遍历复制完，oldFiber 没有可以复用的了，那么直接创建 C D。
+
+**第四步：针对发生移动和更复杂的情况**
+
+```js
+const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
+for (; newIdx < newChildren.length; newIdx++) {
+    const newFiber = updateFromMap(existingChildren,returnFiber)
+    /* 从mapRemainingChildren删掉已经复用oldFiber */
+}
+```
+
+- mapRemainingChildren 返回一个 map ，map 里存放剩余的老的 fiber 和对应的 key (或 index )的映射关系。
+- 接下来遍历剩下没有处理的 Children ，通过 updateFromMap ，判断 mapRemainingChildren 中有没有可以复用 oldFiber ，如果有，那么复用，如果没有，新创建一个 newFiber 。
+- 复用的 oldFiber 会从 mapRemainingChildren 删掉。
+
+情况三：节点位置改变
+
+- **oldChild: A B C D**
+- **newChild: A B D C**
+
+如上 A B 在第一步被有效复用，第二步和第三步不符合，直接进行第四步，C D 被完全复用，existingChildren 为空。
+
+**第五步：删除剩余没有复用的oldFiber**
+
+```js
+if (shouldTrackSideEffects) {
+    /* 移除没有复用到的oldFiber */
+    existingChildren.forEach(child => deleteChild(returnFiber, child));
+}
+```
+
+最后一步，对于没有复用的 oldFiber ，统一删除处理。
+
+情况四：复杂情况(删除 + 新增 + 移动)
+
+- **oldChild: A B C D**
+- **newChild: A E D B**
+
+首先 A 节点，在第一步被复用，接下来直接到第四步，遍历 newChild ，E被创建，D B 从 existingChildren 中被复用，existingChildren 还剩一个 C 在第五步会删除 C ，完成整个流程。
+
+### 关于diffChild思考和key的使用
+
+- 1 React diffChild 时间复杂度 O(n^3) 优化到 O(n)。
+- 2 React key 最好选择唯一性的id，如上述流程，如果选择 Index 作为 key ，如果元素发生移动，那么从移动节点开始，接下来的 fiber 都不能做得到合理的复用。 index 拼接其他字段也会造成相同的效果。
+
+
+
 
 
 ___
