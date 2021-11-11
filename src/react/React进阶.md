@@ -1996,6 +1996,75 @@ if (shouldTrackSideEffects) {
 
 
 
+## 事件原理
+
+**React 为什么要写出一套自己的事件系统？**
+
+首先，对于不同的浏览器，对事件存在不同的兼容性，React 想实现一个兼容全浏览器的框架， 为了实现这个目标就需要创建一个兼容全浏览器的事件系统，以此抹平不同浏览器的差异。
+
+其次，v17 之前 React 事件都是绑定在 document 上，v17 之后 React 把事件绑定在应用对应的容器 container 上，将事件绑定在同一容器统一管理，防止很多事件直接绑定在原生的 DOM 元素上。造成一些不可控的情况。由于不是绑定在真实的 DOM 上，所以 React 需要模拟一套事件流：事件捕获-> 事件源 -> 事件冒泡，也包括重写一下事件源对象 event 。
+
+
+
+### 冒泡阶段和捕获阶段
+
+```js
+export default function Index(){
+    const handleClick=()=>{ console.log('模拟冒泡阶段执行') } 
+    const handleClickCapture = ()=>{ console.log('模拟捕获阶段执行') }
+    return <div>
+        <button onClick={ handleClick  } onClickCapture={ handleClickCapture }  >点击</button>
+    </div>
+}
+```
+
+- 冒泡阶段：开发者正常给 React 绑定的事件比如 onClick，onChange，默认会在模拟冒泡阶段执行。
+- 捕获阶段：如果想要在捕获阶段执行可以将事件后面加上 Capture 后缀，比如 onClickCapture，onChangeCapture。
+
+
+
+### 阻止冒泡
+
+React 中如果想要阻止事件向上冒泡，可以用 `e.stopPropagation()` 。
+
+```js
+export default function Index(){
+    const handleClick=(e)=> {
+        e.stopPropagation() /* 阻止事件冒泡，handleFatherClick 事件讲不在触发 */
+    }
+    const handleFatherClick=()=> console.log('冒泡到父级')
+    return <div onClick={ handleFatherClick } >
+        <div onClick={ handleClick } >点击</div>
+    </div>
+}
+```
+
+- React 阻止冒泡和原生事件中的写法差不多，当如上 handleClick上 阻止冒泡，父级元素的 handleFatherClick 将不再执行，但是底层原理完全不同，接下来会讲到其功能实现。
+
+
+
+### 阻止默认行为
+
+React 阻止默认行为和原生的事件也有一些区别。
+
+**原生事件：** `e.preventDefault()` 和 `return false` 可以用来阻止事件默认行为，由于在 React 中给元素的事件并不是真正的事件处理函数。**所以导致 return false 方法在 React 应用中完全失去了作用。**
+
+**React事件** 在React应用中，可以用 e.preventDefault() 阻止事件默认行为，这个方法并非是原生事件的 preventDefault ，由于 React 事件源 e 也是独立组建的，所以 preventDefault 也是单独处理的。
+
+
+
+### 事件合成
+
+
+
+React 事件系统可分为三个部分：
+
+- 第一个部分是事件合成系统，初始化会注册不同的事件插件。
+- 第二个就是在一次渲染过程中，对事件标签中事件的收集，向 container 注册事件。
+- 第三个就是一次用户交互，事件触发，到事件执行一系列过程。
+
+
+
 ___
 
 
