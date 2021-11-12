@@ -3113,7 +3113,7 @@ if (root.callbackNode === originalCallbackNode) {
 
 
 
-### line模型
+### lane模型
 
 满足以下条件
 
@@ -3222,3 +3222,142 @@ export function removeLanes(set: Lanes, subset: Lanes | Lane): Lanes {
 }
 ```
 
+
+
+#### Lane模型中task是怎么获取优先级的
+
+```js
+export function findUpdateLane(
+  lanePriority: LanePriority,
+  wipLanes: Lanes,
+): Lane {
+  switch (lanePriority) {
+    //...
+    case DefaultLanePriority: {
+      let lane = pickArbitraryLane(DefaultLanes & ~wipLanes);//找到下一个优先级最高的lane
+      if (lane === NoLane) {//上一个level的lane都占满了下降到TransitionLanes继续寻找可用的其他优先级中的位置
+        lane = pickArbitraryLane(TransitionLanes & ~wipLanes);
+        if (lane === NoLane) {//TransitionLanes也满了
+          lane = pickArbitraryLane(DefaultLanes);//从DefaultLanes开始找
+        }
+      }
+      return lane;
+    }
+  }
+}
+```
+
+
+
+#### Lane模型中高优先级是怎么插队的
+
+ 在Lane模型中如果一个低优先级的任务执行，并且还在调度的时候触发了一个高优先级的任务，则高优先级的任务打断低优先级任务，此时应该先取消低优先级的任务，因为此时低优先级的任务可能已经进行了一段时间，Fiber树已经构建了一部分，所以需要将Fiber树还原，这个过程发生在函数prepareFreshStack中，在这个函数中会初始化已经构建的Fiber树
+
+```js
+function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
+  const existingCallbackNode = root.callbackNode;//之前已经调用过的setState的回调
+  //...
+	if (existingCallbackNode !== null) {
+    const existingCallbackPriority = root.callbackPriority;
+    //新的setState的回调和之前setState的回调优先级相等 则进入batchedUpdate的逻辑
+    if (existingCallbackPriority === newCallbackPriority) {
+      return;
+    }
+    //两个回调优先级不一致，则被高优先级任务打断，先取消当前低优先级的任务
+    cancelCallback(existingCallbackNode);
+  }
+	//调度render阶段的起点
+	newCallbackNode = scheduleCallback(
+    schedulerPriorityLevel,
+    performConcurrentWorkOnRoot.bind(null, root),
+  );
+	//...
+}
+
+function unstable_cancelCallback(task) {
+  if (enableProfiling) {
+    if (task.isQueued) {
+      const currentTime = getCurrentTime();
+      markTaskCanceled(task, currentTime);
+      task.isQueued = false;
+    }
+  }
+
+  task.callback = null;
+}
+```
+
+
+
+```js
+function prepareFreshStack(root: FiberRoot, lanes: Lanes) {
+  root.finishedWork = null;
+  root.finishedLanes = NoLanes;
+	//...
+  //workInProgressRoot等变量重新赋值和初始化
+  workInProgressRoot = root;
+  workInProgress = createWorkInProgress(root.current, null);
+  workInProgressRootRenderLanes = subtreeRenderLanes = workInProgressRootIncludedLanes = lanes;
+  workInProgressRootExitStatus = RootIncomplete;
+  workInProgressRootFatalError = null;
+  workInProgressRootSkippedLanes = NoLanes;
+  workInProgressRootUpdatedLanes = NoLanes;
+  workInProgressRootPingedLanes = NoLanes;
+	//...
+}
+```
+
+
+
+#### Lane模型中怎么解决饥饿问题（最低优先级的任务同样需要完成）
+
+ 在调度优先级的过程中，会调用markStarvedLanesAsExpired遍历pendingLanes（未执行的任务包含的lane），如果没过期时间就计算一个过期时间，如果过期了就加入root.expiredLanes中，然后在下次调用getNextLane函数的时候会优先返回expiredLanes
+
+```js
+export function markStarvedLanesAsExpired(
+  root: FiberRoot,
+  currentTime: number,
+): void {
+
+  const pendingLanes = root.pendingLanes;
+  const suspendedLanes = root.suspendedLanes;
+  const pingedLanes = root.pingedLanes;
+  const expirationTimes = root.expirationTimes;
+
+  let lanes = pendingLanes;
+  while (lanes > 0) {//遍历lanes
+    const index = pickArbitraryLaneIndex(lanes);
+    const lane = 1 << index;
+
+    const expirationTime = expirationTimes[index];
+    if (expirationTime === NoTimestamp) {
+
+      if (
+        (lane & suspendedLanes) === NoLanes ||
+        (lane & pingedLanes) !== NoLanes
+      ) {
+        expirationTimes[index] = computeExpirationTime(lane, currentTime);//计算过期时间
+      }
+    } else if (expirationTime <= currentTime) {//过期了
+      root.expiredLanes |= lane;//在expiredLanes加入当前遍历到的lane
+    }
+
+    lanes &= ~lane;
+  }
+}
+```
+
+
+
+```js
+export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
+ 	//...
+  if (expiredLanes !== NoLanes) {
+    nextLanes = expiredLanes;
+    nextLanePriority = return_highestLanePriority = SyncLanePriority;//优先返回过期的lane
+  } else {
+  //...
+    }
+  return nextLanes;
+}
+```
