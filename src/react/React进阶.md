@@ -1994,13 +1994,17 @@ if (shouldTrackSideEffects) {
 
 
 
-
-
 ## 事件原理
+
+
 
 **React 为什么要写出一套自己的事件系统？**
 
+
+
 首先，对于不同的浏览器，对事件存在不同的兼容性，React 想实现一个兼容全浏览器的框架， 为了实现这个目标就需要创建一个兼容全浏览器的事件系统，以此抹平不同浏览器的差异。
+
+
 
 其次，v17 之前 React 事件都是绑定在 document 上，v17 之后 React 把事件绑定在应用对应的容器 container 上，将事件绑定在同一容器统一管理，防止很多事件直接绑定在原生的 DOM 元素上。造成一些不可控的情况。由于不是绑定在真实的 DOM 上，所以 React 需要模拟一套事件流：事件捕获-> 事件源 -> 事件冒泡，也包括重写一下事件源对象 event 。
 
@@ -2008,7 +2012,9 @@ if (shouldTrackSideEffects) {
 
 ### 冒泡阶段和捕获阶段
 
-```js
+
+
+```jsx
 export default function Index(){
     const handleClick=()=>{ console.log('模拟冒泡阶段执行') } 
     const handleClickCapture = ()=>{ console.log('模拟捕获阶段执行') }
@@ -2018,6 +2024,8 @@ export default function Index(){
 }
 ```
 
+
+
 - 冒泡阶段：开发者正常给 React 绑定的事件比如 onClick，onChange，默认会在模拟冒泡阶段执行。
 - 捕获阶段：如果想要在捕获阶段执行可以将事件后面加上 Capture 后缀，比如 onClickCapture，onChangeCapture。
 
@@ -2025,9 +2033,13 @@ export default function Index(){
 
 ### 阻止冒泡
 
+
+
 React 中如果想要阻止事件向上冒泡，可以用 `e.stopPropagation()` 。
 
-```js
+
+
+```jsx
 export default function Index(){
     const handleClick=(e)=> {
         e.stopPropagation() /* 阻止事件冒泡，handleFatherClick 事件讲不在触发 */
@@ -2039,15 +2051,23 @@ export default function Index(){
 }
 ```
 
+
+
 - React 阻止冒泡和原生事件中的写法差不多，当如上 handleClick上 阻止冒泡，父级元素的 handleFatherClick 将不再执行，但是底层原理完全不同，接下来会讲到其功能实现。
 
 
 
 ### 阻止默认行为
 
+
+
 React 阻止默认行为和原生的事件也有一些区别。
 
+
+
 **原生事件：** `e.preventDefault()` 和 `return false` 可以用来阻止事件默认行为，由于在 React 中给元素的事件并不是真正的事件处理函数。**所以导致 return false 方法在 React 应用中完全失去了作用。**
+
+
 
 **React事件** 在React应用中，可以用 e.preventDefault() 阻止事件默认行为，这个方法并非是原生事件的 preventDefault ，由于 React 事件源 e 也是独立组建的，所以 preventDefault 也是单独处理的。
 
@@ -2059,9 +2079,161 @@ React 阻止默认行为和原生的事件也有一些区别。
 
 React 事件系统可分为三个部分：
 
+
+
 - 第一个部分是事件合成系统，初始化会注册不同的事件插件。
 - 第二个就是在一次渲染过程中，对事件标签中事件的收集，向 container 注册事件。
+
 - 第三个就是一次用户交互，事件触发，到事件执行一系列过程。
+
+
+
+绑定事件并不是一次性绑定所有事件，比如发现了 onClick 事件，就会绑定 click 事件，比如发现 onChange 事件，会绑定 [blur，change ，focus ，keydown，keyup] 多个事件。
+
+React 事件合成的概念：React 应用中，元素绑定的事件并不是原生事件，而是React 合成的事件，比如 onClick 是由 click 合成，onChange 是由 blur ，change ，focus 等多个事件合成。
+
+
+
+**registrationNameModules** 记录了 React 事件（比如 onBlur ）和与之对应的处理插件的映射
+
+```js
+const registrationNameModules = {
+    onBlur: SimpleEventPlugin,
+    onClick: SimpleEventPlugin,
+    onClickCapture: SimpleEventPlugin,
+    onChange: ChangeEventPlugin,
+    onChangeCapture: ChangeEventPlugin,
+    onMouseEnter: EnterLeaveEventPlugin,
+    onMouseLeave: EnterLeaveEventPlugin,
+    ...
+}
+```
+
+在事件绑定阶段，如果发现有 React 事件，比如 onChange ，就会找到对应的原生事件数组，逐一绑定。
+
+
+
+**registrationNameDependencies** 保存了 React 事件和原生事件对应关系
+
+```js
+{
+    onBlur: ['blur'],
+    onClick: ['click'],
+    onClickCapture: ['click'],
+    onChange: ['blur', 'change', 'click', 'focus', 'input', 'keydown', 'keyup', 'selectionchange'],
+    onMouseEnter: ['mouseout', 'mouseover'],
+    onMouseLeave: ['mouseout', 'mouseover'],
+    ...
+}
+```
+
+
+
+### 事件绑定
+
+所谓事件绑定，就是在 React 处理 props 时候，如果遇到事件比如 onClick ，就会通过 addEventListener 注册原生事件
+
+```jsx
+export default function Index(){
+  const handleClick = () => console.log('点击事件')
+  const handleChange =() => console.log('change事件)
+  return <div >
+     <input onChange={ handleChange }  />
+     <button onClick={ handleClick } >点击</button>
+  </div>
+}
+```
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1636961116495-fe079854-9803-4f88-869c-2a21bed4f65b.png)
+
+
+
+diffProperties 函数在 diff props 如果发现是合成事件( onClick ) 就会调用 legacyListenToEvent 函数。注册事件监听器。
+
+```js
+function diffProperties(){
+    /* 判断当前的 propKey 是不是 React合成事件 */
+    if(registrationNameModules.hasOwnProperty(propKey)){
+         /* 这里多个函数简化了，如果是合成事件， 传入成事件名称 onClick ，向document注册事件  */
+         legacyListenToEvent(registrationName, document）;
+    }
+}
+```
+
+应用 registrationNameDependencies 对 React 合成事件，分别绑定原生事件的事件监听器。比如发现是 onChange ，那么取出 ['blur', 'change', 'click', 'focus', 'input', 'keydown', 'keyup', 'selectionchange'] 遍历绑定。
+
+```js
+function legacyListenToEvent(registrationName，mountAt){
+   const dependencies = registrationNameDependencies[registrationName]; // 根据 onClick 获取  onClick 依赖的事件数组 [ 'click' ]。
+    for (let i = 0; i < dependencies.length; i++) {
+    const dependency = dependencies[i];
+    //  addEventListener 绑定事件监听器
+    ...
+  }
+}
+```
+
+绑定在 document 的事件，是 React 统一的事件处理函数 dispatchEvent ，React 需要一个统一流程去代理事件逻辑，包括 React 批量更新等逻辑。
+
+只要是 **React 事件触发，首先执行的就是 dispatchEvent**
+
+```js
+const listener = dispatchEvent.bind(null,'click',eventSystemFlags,document) 
+/* 这里进行真正的事件绑定。*/
+document.addEventListener('click',listener,false) 
+```
+
+
+
+react事件执行队列
+
+```js
+ while (instance !== null) {
+    const {stateNode, tag} = instance;
+    if (tag === HostComponent && stateNode !== null) { /* DOM 元素 */
+        const currentTarget = stateNode;
+        if (captured !== null) { /* 事件捕获 */
+            /* 在事件捕获阶段,真正的事件处理函数 */
+            const captureListener = getListener(instance, captured); // onClickCapture
+            if (captureListener != null) {
+            /* 对应发生在事件捕获阶段的处理函数，逻辑是将执行函数unshift添加到队列的最前面 */
+                dispatchListeners.unshift(captureListener);
+                
+            }
+        }
+        if (bubbled !== null) { /* 事件冒泡 */
+            /* 事件冒泡阶段，真正的事件处理函数，逻辑是将执行函数push到执行队列的最后面 */
+            const bubbleListener = getListener(instance, bubbled); // 
+            if (bubbleListener != null) {
+                dispatchListeners.push(bubbleListener); // onClick
+            }
+        }
+    }
+    instance = instance.return;
+}
+```
+
+### React如何模拟阻止事件冒泡
+
+```js
+function runEventsInBatch(){
+    const dispatchListeners = event._dispatchListeners;
+    if (Array.isArray(dispatchListeners)) {
+    for (let i = 0; i < dispatchListeners.length; i++) {
+      if (event.isPropagationStopped()) { /* 判断是否已经阻止事件冒泡 */
+        break;
+      }    
+      dispatchListeners[i](event) /* 执行真正的处理函数 */
+    }
+  }
+}
+```
+
+
+
+## 调度（ Scheduler ）
+
+
 
 
 
