@@ -1,4 +1,4 @@
-## tsconfig.json配置
+# tsconfig.json配置
 
 ```js
 {
@@ -86,7 +86,69 @@
 
 
 
-## 接口
+# 基础类型
+
+```typescript
+ // 布尔值
+let isDnoe: boolean = false;
+
+// 数字 ts中的数字类型支持十进制、十六进制、二进制和八进制
+let num1: number = 10;
+let num2: number = 0o744
+
+// 字符串 可以使用模板字符串
+let name: string = 'wangyu';
+let sentence: string = `Hello, my name is ${ name }`;
+
+// 数组
+let list: Array<number> = [1, 2, 3];
+let list1: number[] = [1, 2, 3];
+
+// 元祖 当访问一个越界的元素，会使用联合类型替代：
+let tupleList: [number, string] = [10, '1'];
+tupleList[3] = 'world'; // OK, 字符串可以赋值给(string | number)类型
+
+// 枚举 enum类型是对JavaScript标准数据类型的一个补充。
+// 默认情况下，从0开始为元素编号。 你也可以手动的指定成员的数值。
+enum Gender {
+    Girl,
+    Boy
+}
+console.log(Gender.Girl); // 0
+console.log(Gender[0]); // Girl
+// 枚举解析成js后的代码
+var Gender;
+(function (Gender) {
+    Gender[Gender["Girl"] = 0] = "Girl";
+    Gender[Gender["Boy"] = 1] = "Boy";
+})(Gender || (Gender = {}));
+
+// 常量枚举 编译后直接把值打印出来，不对常量枚举进行编译，节省内存开销
+const enum Colors {
+    red, yellow, blue
+}
+const colorArr = [Colors.red];
+console.log(Colors.red);
+
+// 任意类型 any  比如第三方库使用时不确定类型、对现有代码进行改写是 都适合用any 不进行类型检查
+let list: any[] = [1, true, "free"];
+let element: (HTMLElement | null) = document.getElementById('root'); // HTMLElement 任意dom元素类型
+
+// null undefined
+// 默认情况下null和undefined是所有类型的子类型。 就是说你可以把 null和undefined赋值给number类型的变量。然而，当你指定了--"strictNullChecks": true  标记，null和undefined只能赋值给void和它们各自。 这能避免 很多常见的问题。
+let x: number;
+x = null;
+x = undefined;
+
+// Void 表示没有任何类型
+function foo(): void {
+    console.log(1);
+}
+```
+
+
+
+# 接口
 
 接口是TypeScript的一个核心知识，他它能合并众多类型声明至一个类型声明
 
