@@ -134,17 +134,68 @@ console.log(Colors.red);
 let list: any[] = [1, true, "free"];
 let element: (HTMLElement | null) = document.getElementById('root'); // HTMLElement 任意dom元素类型
 
+// 非空断言
+element!.style.color = 'red';
+
 // null undefined
 // 默认情况下null和undefined是所有类型的子类型。 就是说你可以把 null和undefined赋值给number类型的变量。然而，当你指定了--"strictNullChecks": true  标记，null和undefined只能赋值给void和它们各自。 这能避免 很多常见的问题。
 let x: number;
 x = null;
 x = undefined;
+```
 
-// Void 表示没有任何类型
+
+
+```typescript
+// never 代表不会出现的值
+// never类型表示的是那些永不存在的值的类型。 例如， never类型是那些总是会抛出异常或根本就不会有返回值的函数表达式或箭头函数表达式的返回值类型； 变量也可能是 never类型，当它们被永不为真的类型保护所约束时。
+// never类型是任何类型的子类型，也可以赋值给任何类型；然而，没有类型是never的子类型或可以赋值给never类型（除了never本身之外）。 即使 any也不可以赋值给never。
+
+// 返回never的函数必须存在无法达到的终点
+function error(message: string): never {
+    throw new Error(message);
+}
+
+// 推断的返回值类型为never
+function fail() {
+    return error("Something failed");
+}
+
+// 返回never的函数必须存在无法达到的终点
+function infiniteLoop(): never {
+    while (true) {
+    }
+}
+
+// Void 表示没有任何类型 void 可以兼容undefined 和 null（strictNullChecks = false）
 function foo(): void {
     console.log(1);
 }
+
+// never 和 void 的区别
+// void 可以被赋值为null和undefined never 不能包含任何类型
+// 函数返回void函数能正常执行，返回never无法正常执行
 ```
+
+
+
+```typescript
+// Symbol
+const sym1 = Symbol('key');
+
+// Bigint bigint 和 number 不通用
+const num = BigInt(Number.MAX_SAFE_INTEGER);
+
+// Object 表示非原始类型，也就是除number，string，boolean，symbol，null或undefined之外的类型。
+declare function create(o: object | null): void;
+
+create({ prop: 0 }); // OK
+create(null); // OK
+
+create(42); // Error
+```
+
+
 
 
 
