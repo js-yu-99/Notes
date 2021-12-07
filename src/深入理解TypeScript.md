@@ -197,6 +197,49 @@ create(42); // Error
 
 
 
+# 复杂类型
+
+```typescript
+// 包装对象类型 ts会想js一样在声明的原始类型中使用方法和属性，并不会进行报错
+let name: string = 'wangyu';
+console.log(name.length);
+
+// 但是不能把对象类型直接赋值给原始类型定义的变量
+let bol: boolean = !1;
+let bol1: boolean = Boolean(1);
+let bol2: boolean = new Boolean(1); // “boolean”是基元，但“Boolean”是包装器对象。如可能首选使用“boolean”。
+
+// 联合类型 明确类型是什么之后才能使用对应类型的方法
+let name1: string | number;
+console.log(name1.length); // 类型“string | number”上不存在属性“length”。类型“number”上不存在属性“length”
+name1 = 'wang';
+console.log(name1.length);
+name1 = 10;
+console.log(name1.toFixed(2));
+
+// 类型断言
+let name2: string | number;
+console.log((name2! as number).toFixed(2));
+console.log(name2! as any as boolean); // 双重断言
+
+// 字面量类型
+const up: 'UP' = 'UP';
+const down: 'Down' = "Down";
+const num1: 1 = 1;
+type Dorection = 'Up' | 'Down';
+function move(direction: Dorection) {
+
+}
+move('Down');
+
+//类型字面量
+type Person = {
+    name: string;
+    age: number;
+}
+let p1: Person = {name: 'wangyu', age: 20};
+```
+
 
 
 # 接口
