@@ -2233,7 +2233,80 @@ function runEventsInBatch(){
 
 ## 调度（ Scheduler ）
 
+### 为什么reaact采用异步调度？
 
+React不像Vue那样通过template模板收集依赖，轻松响应。React要每次都根节点开始diff，更新不同的dom。那这个时候如果diff超过了浏览器一帧的时间或者是一些其他的事情，那就会阻塞浏览器的绘制。如果把React的更新，交给浏览器自行控制，浏览器就会自己去在空闲的时候更新任务。
+
+
+
+### 时间分片
+
+浏览器每次执行一次事件循环（一帧）都会做如下事情：处理事件，执行 js ，调用 requestAnimation ，布局 Layout ，绘制 Paint ，在一帧执行后，如果没有其他事件，那么浏览器会进入休息时间，那么有的一些不是特别紧急 React 更新，就可以执行了。
+
+requestIdleCallback API可以在流量器有空余的时间时，调用requestIdleCallback的回调。
+
+```javascript
+requestIdleCallback(callback,{ timeout });
+```
+
+- callback 回调，浏览器空余时间执行回调函数。
+- timeout 超时时间。如果浏览器长时间没有空闲，那么回调就不会执行，为了解决这个问题，可以通过 requestIdleCallback 的第二个参数指定一个超时时间。
+
+
+
+React 为了防止 requestIdleCallback 中的任务由于浏览器没有空闲时间而卡死，所以设置了 5 个优先级。
+
+- Immediate -1 需要立刻执行。
+- UserBlocking 250ms 超时时间250ms，一般指的是用户交互。
+
+- Normal 5000ms 超时时间5s，不需要直观立即变化的任务，比如网络请求。
+- Low 10000ms 超时时间10s，肯定要执行的任务，但是可以放在最后处理。
+
+- Idle 一些没有必要的任务，可能不会执行。
+
+
+
+但是 requestIdleCallback 目前只有谷歌浏览器支持 ，为了兼容每个浏览器，React需要自己实现一个 requestIdleCallback ，那么就要具备两个条件：
+
+- 1 实现的这个 requestIdleCallback ，可以主动让出主线程，让浏览器去渲染视图。
+- 2 一次事件循环只执行一次，因为执行一个以后，还会请求下一次的时间片。
+
+能够满足上述条件的，就只有 **宏任务**，宏任务是在下次事件循环中执行，不会阻塞浏览器更新。而且浏览器一次只会执行一个宏任务。
+
+而宏任务中的**setTimeout(fn, 0)** 会有4毫秒的浪费，所以采用**MessageChannel**实现。
+
+MessageChannel 接口允许开发者创建一个新的消息通道，并通过它的两个 MessagePort 属性发送数据。
+
+- MessageChannel.port1 只读返回 channel 的 port1 。
+- MessageChannel.port2 只读返回 channel 的 port2 。
+
+
+
+```javascript
+let scheduledHostCallback = null 
+/* 建立一个消息通道 */
+var channel = new MessageChannel();
+/* 建立一个port发送消息 */
+var port = channel.port2;
+
+channel.port1.onmessage = function(){
+  /* 执行任务 */
+  scheduledHostCallback() 
+  /* 执行完毕，清空任务 */
+  scheduledHostCallback = null
+};
+/* 向浏览器请求执行更新任务 */
+requestHostCallback = function (callback) {
+  scheduledHostCallback = callback;
+  if (!isMessageLoopRunning) {
+    isMessageLoopRunning = true;
+    port.postMessage(null);
+  }
+};
+```
+
+- 在一次更新中，React 会调用 requestHostCallback ，把更新任务赋值给 scheduledHostCallback ，然后 port2 向 port1 发起 postMessage 消息通知。
+- port1 会通过 onmessage ，接受来自 port2 消息，然后执行更新任务 scheduledHostCallback ，然后置空 scheduledHostCallback ，借此达到异步执行目的。
 
 
 
