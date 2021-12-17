@@ -2310,6 +2310,28 @@ requestHostCallback = function (callback) {
 
 
 
+### 异步调度原理
+
+React 发生一次更新，会统一走 ensureRootIsScheduled（调度应用）。
+
+- 对于正常更新会走 performSyncWorkOnRoot 逻辑，最后会走 workLoopSync 。
+- 对于低优先级的异步更新会走 performConcurrentWorkOnRoot 逻辑，最后会走 workLoopConcurrent 。
+
+```javascript
+function workLoopSync() {
+  while (workInProgress !== null) {     workInProgress = performUnitOfWork(workInProgress);   }
+} 
+function workLoopConcurrent() {
+  while (workInProgress !== null && !shouldYield()) {     workInProgress = performUnitOfWork(workInProgress);   }
+} 
+```
+
+
+
+在一次更新调度过程中，workLoop 会更新执行每一个待更新的 fiber 。他们的区别就是异步模式会调用一个 shouldYield() ，如果当前浏览器没有空余时间， shouldYield 会中止循环，直到浏览器有空闲时间后再继续遍历，从而达到终止渲染的目的。这样就解决了一次性遍历大量的 fiber ，导致浏览器没有时间执行一些渲染任务，导致了页面卡顿。
+
+
+
 ___
 
 
