@@ -2332,6 +2332,99 @@ function workLoopConcurrent() {
 
 
 
+### scheduleCallback
+
+无论是上述正常更新任务 workLoopSync 还是低优先级的任务 workLoopConcurrent ，都是由调度器 scheduleCallback 统一调度的。
+
+```javascript
+// 正常任务
+scheduleCallback(Immediate,workLoopSync)
+
+// 异步任务
+/* 计算超时等级，就是如上那五个等级 */
+var priorityLevel = inferPriorityFromExpirationTime(currentTime, expirationTime);
+scheduleCallback(priorityLevel,workLoopConcurrent)
+```
+
+**scheduleCallback做了什么？**
+
+```javascript
+function scheduleCallback(){
+   /* 计算过期时间：超时时间  = 开始时间（现在时间） + 任务超时的时间（上述设置那五个等级）     */
+   const expirationTime = startTime + timeout;
+   /* 创建一个新任务 */
+   const newTask = { ... }
+  if (startTime > currentTime) {
+      /* 通过开始时间排序 */
+      newTask.sortIndex = startTime;
+      /* 把任务放在timerQueue中 */
+      push(timerQueue, newTask);
+      /*  执行setTimeout ， */
+      requestHostTimeout(handleTimeout, startTime - currentTime);
+  }else{
+    /* 通过 expirationTime 排序  */
+    newTask.sortIndex = expirationTime;  
+    /* 把任务放入taskQueue */
+    push(taskQueue, newTask);
+    /*没有处于调度中的任务， 然后向浏览器请求一帧，浏览器空闲执行 flushWork */
+     if (!isHostCallbackScheduled && !isPerformingWork) {
+        isHostCallbackScheduled = true;
+         requestHostCallback(flushWork)
+     }
+    
+  }
+  
+} 
+```
+
+- taskQueue，里面存的都是过期的任务，依据任务的过期时间( expirationTime ) 排序，需要在调度的 workLoop 中循环执行完这些任务。
+- timerQueue 里面存的都是没有过期的任务，依据任务的开始时间( startTime )排序，在调度 workLoop 中 会用advanceTimers检查任务是否过期，如果过期了，放入 taskQueue 队列。
+
+
+
+scheduleCallback 流程如下。
+
+- 创建一个新的任务 newTask。
+- 通过任务的开始时间( startTime ) 和 当前时间( currentTime ) 比较:当 startTime > currentTime, 说明未过期, 存到 timerQueue，当 startTime <= currentTime, 说明已过期, 存到 taskQueue。
+
+- 如果任务过期，并且没有调度中的任务，那么调度 requestHostCallback。本质上调度的是 flushWork。
+- 如果任务没有过期，用 requestHostTimeout 延时执行 handleTimeout。
+
+
+
+```javascript
+// requestHostTimeout 延时执行 handleTimeout，cancelHostTimeout 用于清除当前的延时器。
+
+requestHostTimeout = function (cb, ms) {
+_timeoutID = setTimeout(cb, ms);
+};
+
+cancelHostTimeout = function () {
+clearTimeout(_timeoutID);
+};
+
+
+// 延时指定时间后，调用的 handleTimeout 函数， handleTimeout 会把任务重新放在 requestHostCallback 调度。
+// 通过 advanceTimers 将 timeQueue 中过期的任务转移到 taskQueue 中。
+// 然后调用 requestHostCallback 调度过期的任务。
+function handleTimeout(){
+  isHostTimeoutScheduled = false;
+  /* 将 timeQueue 中过期的任务，放在 taskQueue 中 。 */
+  advanceTimers(currentTime);
+  /* 如果没有处于调度中 */
+  if(!isHostCallbackScheduled){
+      /* 判断有没有过期的任务， */
+      if (peek(taskQueue) !== null) {   
+      isHostCallbackScheduled = true;
+      /* 开启调度任务 */
+      requestHostCallback(flushWork);
+    }
+  }
+}
+```
+
+
+
 ___
 
 
