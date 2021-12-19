@@ -2425,6 +2425,86 @@ function handleTimeout(){
 
 
 
+### advanceTimers
+
+```javascript
+function advanceTimers(){
+   var timer = peek(timerQueue);
+   while (timer !== null) {
+      if(timer.callback === null){
+        pop(timerQueue);
+      }else if(timer.startTime <= currentTime){ /* 如果任务已经过期，那么将 timerQueue 中的过期任务，放入taskQueue */
+         pop(timerQueue);
+         timer.sortIndex = timer.expirationTime;
+         push(taskQueue, timer);
+      }
+   }
+}
+```
+
+React 的更新任务最后都是放在 taskQueue 中的。
+
+requestHostCallback放入 MessageChannel 中的回调函数是flushWork。
+
+
+
+### flushWork
+
+```javascript
+// flushWork 如果有延时任务执行的话，那么会先暂停延时任务，然后调用 workLoop ，去真正执行超时的更新任务。
+function flushWork(){
+  if (isHostTimeoutScheduled) { /* 如果有延时任务，那么先暂定延时任务*/
+    isHostTimeoutScheduled = false;
+    cancelHostTimeout();
+  }
+  try{
+     /* 执行 workLoop 里面会真正调度我们的事件  */
+     workLoop(hasTimeRemaining, initialTime)
+  }
+}
+
+// workLoop 会依次更新过期任务队列中的任务。到此为止，完成整个调度过程。
+function workLoop(){
+  var currentTime = initialTime;
+  advanceTimers(currentTime);
+  /* 获取任务列表中的第一个 */
+  currentTask = peek();
+  while (currentTask !== null){
+      /* 真正的更新函数 callback */
+      var callback = currentTask.callback;
+      if(callback !== null ){
+         /* 执行更新 */
+         callback()
+        /* 先看一下 timeQueue 中有没有 过期任务。 */
+        advanceTimers(currentTime);
+      }
+      /* 再一次获取任务，循环执行 */ 
+      currentTask = peek(taskQueue);
+  }
+}
+```
+
+
+
+### shouldYield
+
+在 fiber 的异步更新任务 workLoopConcurrent 中，每一个 fiber 的 workloop 都会调用 shouldYield 判断是否有超时更新的任务，如果有，那么停止 workLoop。
+
+```javascript
+// 如果存在第一个任务，并且已经超时了，那么 shouldYield 会返回 true，那么会中止 fiber 的 workloop。
+function unstable_shouldYield() {
+  var currentTime = exports.unstable_now();
+  advanceTimers(currentTime);
+  /* 获取第一个任务 */
+  var firstTask = peek(taskQueue);
+  return firstTask !== currentTask && currentTask !== null && firstTask !== null && firstTask.callback !== null && firstTask.startTime <= currentTime && firstTask.expirationTime < currentTask.expirationTime || shouldYieldToHost();
+}
+```
+
+![img](https://cdn.nlark.com/yuque/0/2021/png/21510703/1639925393801-e00a508d-fbe5-4b53-9def-0379f697fac0.png)
+
+
+
 ___
 
 
