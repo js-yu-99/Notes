@@ -558,6 +558,162 @@ HTTP 的请求 - 应答模式也契合了传统的 C/S（Client/Server）系统�
 
 
 
+# HTTP/1.1特点中的缺点
+
+## 无状态
+
+无法支持需要连续多个步骤的“事务”操作。例如电商购物。
+
+
+
+## 明文
+
+“明文”意思就是协议里的报文（准确地说是 header 部分）不使用二进制数据，而是用简单可阅读的文本形式。
+
+HTTP 报文的所有信息都暴露在“光天化日之下”，在漫长的传输链路的每一个环节上都毫无隐私可言，不怀好意的人只要侵入了这个链路里的某个设备，简单地“旁路”一下流量，就可以实现对通信的窥视。
+
+
+
+## 不安全
+
+在“身份认证”和“完整性校验”这两方面 HTTP 是欠缺的。
+
+“身份认证”简单来说就是“怎么证明你就是你”。
+
+HTTP 没有提供有效的手段来确认通信双方的真实身份。虽然协议里有一个基本的认证机制，但因为刚才所说的明文传输缺点，这个机制几乎可以说是“纸糊的”，非常容易被攻破。如果仅使用 HTTP 协议，很可能你会连到一个页面一模一样但却是个假冒的网站，然后再被“钓”走各种私人信息。
+
+HTTP 协议也不支持“完整性校验”，数据在传输过程中容易被窜改而无法验证真伪。
+
+
+
+## 性能
+
+可以用六个字来概括：“不算差，不够好”。HTTP 协议基于 TCP/IP，并且使用了“请求 - 应答”的通信模式，所以性能的关键就在这两点上。
+
+而“请求 - 应答”模式则加剧了 HTTP 的性能问题，这就是著名的“队头阻塞”（Head-of-line blocking），当顺序发送的请求序列中的一个请求因为某种原因被阻塞时，在后面排队的所有请求也一并被阻塞，会导致客户端迟迟收不到数据。
+
+
+
+# HTTP实体数据
+
+## 数据类型与编码
+
+作为应用层协议，HTTP协议在接收到数据之后，需要告知上层应用这是什么数据才行。否则上层就会“不知所措”。
+
+所以HTTP通过“MIME type”，用来标记 body 的数据类型。
+
+- text：即文本格式的可读数据，我们最熟悉的应该就是 text/html 了，表示超文本文档，此外还有纯文本 text/plain、样式表 text/css 等。
+- image：即图像文件，有 image/gif、image/jpeg、image/png 等。
+
+- audio/video：音频和视频数据，例如 audio/mpeg、video/mp4 等。
+- application：数据格式不固定，可能是文本也可能是二进制，必须由上层应用程序来解释。常见的有 application/json，application/javascript、application/pdf 等，另外，如果实在是不知道数据是什么类型，像刚才说的“黑盒”，就会是 application/octet-stream，即不透明的二进制数据。
+
+
+
+但仅有 MIME type 还不够，因为 HTTP 在传输时为了节约带宽，有时候还会压缩数据，为了不要让浏览器继续“猜”，还需要有一个“Encoding type”，告诉数据是用的什么编码格式，这样对方才能正确解压缩，还原出原始的数据。
+
+- gzip：GNU zip 压缩格式，也是互联网上最流行的压缩格式；
+- deflate：zlib（deflate）压缩格式，流行程度仅次于 gzip；
+
+- br：一种专门为 HTTP 优化的新压缩算法（Brotli）。
+
+
+
+## 数据类型使用的头字段
+
+
+
+HTTP 协议为MIME type 和 Encoding type定义了两个 Accept 请求头字段和两个 Content 实体头字段，用于客户端和服务器进行“内容协商”。也就是说，客户端用 Accept 头告诉服务器希望接收什么样的数据，而服务器用 Content 头告诉客户端实际发送了什么样的数据。
+
+![img](https://cdn.nlark.com/yuque/0/2022/png/21510703/1641997227512-034c2f45-04e6-4a7c-bf62-e0732d92e8a2.png)
+
+Accept 字段标记的是客户端可理解的 MIME type，可以用“,”做分隔符列出多个类型，让服务器有更多的选择余地，例如下面的这个头：
+
+```javascript
+Accept: text/html,application/xml,image/webp,image/png
+```
+
+这就是告诉服务器：“我能够看懂 HTML、XML 的文本，还有 webp 和 png 的图片，请给我这四类格式的数据”。
+
+相应的，服务器会在响应报文里用头字段 Content-Type 告诉实体数据的真实类型：
+
+```javascript
+Content-Type: text/html
+Content-Type: image/png
+```
+
+这样浏览器看到报文里的类型是“text/html”就知道是 HTML 文件，会调用排版引擎渲染出页面，看到“image/png”就知道是一个 PNG 文件，就会在页面上显示出图像。
+
+
+
+Accept-Encoding 字段标记的是客户端支持的压缩格式，同样也可以用“,”列出多个，服务器可以选择其中一种来压缩数据，实际使用的压缩格式放在响应头字段 Content-Encoding 里。
+
+```javascript
+Accept-Encoding: gzip, deflate, br
+Content-Encoding: gzip
+```
+
+不过这两个字段是可以省略的，如果请求报文里没有 Accept-Encoding 字段，就表示客户端不支持压缩数据；如果响应报文里没有 Content-Encoding 字段，就表示响应数据没有被压缩。
+
+
+
+## 语言类型与编码
+
+为了国际化的需要，HTTP 采用了与数据类型相似的解决方案，又引入了两个概念：语言类型与字符集（英语世界用的 ASCII、汉语世界用的 GBK、BIG5，日语世界用的 Shift_JIS 等）。
+
+同样的，HTTP 协议也使用 Accept 请求头字段和 Content 实体头字段，用于客户端和服务器就语言与编码进行“内容协商”。
+
+Accept-Language 字段标记了客户端可理解的自然语言，也允许用“,”做分隔符列出多个类型：
+
+```javascript
+Accept-Language: zh-CN, zh, en
+```
+
+这个请求头会告诉服务器：“最好给我 zh-CN 的汉语文字，如果没有就用其他的汉语方言，如果还没有就给英文”。
+
+相应的，服务器应该在响应报文里用头字段 Content-Language 告诉客户端实体数据使用的实际语言类型：
+
+```javascript
+Content-Language: zh-CN
+```
+
+字符集在 HTTP 里使用的请求头字段是 Accept-Charset，但响应头里却没有对应的 Content-Charset，而是在 Content-Type 字段的数据类型后面用“charset=xxx”来表示。
+
+```javascript
+Accept-Charset: gbk, utf-8
+Content-Type: text/html; charset=utf-8
+```
+
+现在的浏览器都支持多种字符集，通常不会发送 Accept-Charset，而服务器也不会发送 Content-Language，因为使用的语言完全可以由字符集推断出来，所以在请求头里一般只会有 Accept-Language 字段，响应头里只会有 Content-Type 字段。
+
+
+
+## 内容协商
+
+在 HTTP 协议里用 Accept、Accept-Encoding、Accept-Language 等请求头字段进行内容协商的时候，还可以用一种特殊的“q”参数表示权重来设定优先级，这里的“q”是“quality factor”的意思。
+
+权重的最大值是 1，最小值是 0.01，默认值是 1，如果值是 0 就表示拒绝。具体的形式是在数据类型或语言代码后面加一个“;”，然后是“q=value”。在 HTTP 的内容协商里“;”的意义是小于“,”的。
+
+```javascript
+Accept: text/html,application/xml;q=0.9,*/*;q=0.8
+```
+
+它表示浏览器最希望使用的是 HTML 文件，权重是 1，其次是 XML 文件，权重是 0.9，最后是任意数据类型，权重是 0.8。服务器收到请求头后，就会计算权重，再根据自己的实际情况优先输出 HTML 或者 XML。
+
+
+
+服务器会在响应头里多加一个 Vary 字段，记录服务器在内容协商时参考的请求头字段，给出一点信息
+
+```javascript
+Vary: Accept-Encoding,User-Agent,Accept
+```
+
+这个 Vary 字段表示服务器依据了 Accept-Encoding、User-Agent 和 Accept 这三个头字段，然后决定了发回的响应报文。Vary 字段可以认为是响应报文的一个特殊的“版本标记”。每当 Accept 等请求头变化时，Vary 也会随着响应报文一起变化。
+
+
+
+
+
 ---
 
 
