@@ -36,7 +36,7 @@
 + instanceof 检测实例是否属于某个类
 + constructor 获取构造函数
 + Object.prototype.toString.call(value) 检测数据类型
-+ Array.isAray(valye) 检测值是否为数组
++ Array.isAray(value) 检测值是否为数组
 
 > typeof 的弊端：
 >
@@ -157,7 +157,7 @@ console.log(arr); // [27, NaN, 1, 1, 27]
 
 + `===`
 
-+ `Object,is()`
++ `Object.is()`
 
 
 
@@ -199,7 +199,7 @@ js代码运行环境
 var a = 12;
 var b = a;
 b = 13;
-cosnole.log(a);
+cosnole.log(a); // 12
 ```
 
 **堆内存和栈内存都存在于运行内存中 (CPU)**
@@ -209,7 +209,7 @@ cosnole.log(a);
 - 供代码执行
 - 存储原始值和变量
 
-**EC (Execution Contextl)** 执行上下文  |  **ECG** 全局执行上下文
+**EC (Execution Context)** 执行上下文  |  **ECG** 全局执行上下文
 
 - 区分代码执行的环境
 - 全局代码都会在全局上下文中执行
