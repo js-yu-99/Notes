@@ -2866,6 +2866,325 @@ function updateMemo(nextCreate,nextDeps){
 
 
 
+# Mobx
+
+## Mobx的特性
+
+
+
+**观察者模式**
+
+Mobx 采用了一种'观察者模式'——Observer，整个设计架构都是围绕 Observer 展开：
+
+- 在 mobx 的状态层，每一个需要观察的属性都会添加一个观察者，可以称之为 ObserverValue 。
+- 有了观察者，那么就需要向观察者中收集 listener ，mobx 中有一个 Reaction 模块，可以对一些行为做依赖收集，在 React 中，是通过劫持 render 函数执行行为，进行的依赖收集。
+
+- 如何监听改变，用自定义存取器属性中的 get 和 set ，来进行的依赖收集和更新派发，当状态改变，观察者会直接精确通知每个 listener 。
+
+
+
+**状态提升**
+
+在正常情况下，在 React 应用中使用 Mobx ，本质上 mobx 里面的状态，并不是存在 React 组件里面的，是在外部由一个个 mobx 的模块 model 构成，每一个 model 可以理解成一个对象，状态实质存在 model 中，model 状态通过 props 添加到组件中，可以用 mobx-react 中的 Provder 和 inject 便捷获取它们，虽然 mobx 中响应式处理这些状态，但是不要试图直接修改 props 来促使更新，这样违背了 React Prop 单向数据流的原则。正确的处理方法，还是通过 model 下面的 action 方法，来改变状态，React 实质上调用的是 action 方法。
+
+
+
+**装饰器模式**
+
+为了建立观察者模式，便捷地获取状态/监听状态，mobx 很多接口都支持装饰器模式的写法。
+
+
+
+**精确颗粒化收集**
+
+对监听的数据改变可以具体到单个属性。
+
+
+
+**引用类型处理**
+
+observable 对于引用数据类型，比如 Object ，Array ，Set ，Map等，除了新建一个 observable 之外，还会做如下两点操作。
+
+- 一 Proxy：会把原始对象用 Proxy 代理，Proxy 会精确响应原始对象的变化，比如增加属性——给属性绑定 ObserverValue ，删除属性——给属性解绑 ObserverValue 等。
+- 二 ObservableAdministration： 对于子代属性，会创建一个 ObservableAdministration，用于管理子代属性的ObserverValue。
+
+- 对于外层 Root ，在 constructor 使用 makeObservable ，mobx 会默认给最外层的 Root 添加 ObservableAdministration 。
+
+
+
+## Mobx流程分析
+
+### 模块初始化
+
+**绑定状态-observable**
+
+mobx/src/api/observable.ts
+
+```javascript
+function make_(adm,key,descriptor){ /*  */
+    return this.extend_(adm,key,descriptor)
+}
+function extend_(adm,key,descriptor){
+    return adm.defineObservableProperty_(key,descriptor,options)
+}
+
+const observableAnnotation = createObservableAnnotation(OBSERVABLE);
+export function createObservableAnnotation(name: string, options?: object): Annotation {
+    return {
+        annotationType_: name,
+        options_: options,
+        make_,
+        extend_
+    }
+}
+function createObservable(v: any, arg2?: any, arg3?: any) {
+    if (isStringish(arg2)) {
+        storeAnnotation(v, arg2, observableAnnotation)
+        return
+    }
+}
+
+export function storeAnnotation(prototype: any, key: PropertyKey, annotation: Annotation) {
+    if (!isOverride(annotation)) {
+        prototype[storedAnnotationsSymbol][key] = annotation
+    }
+}
+function createObservable(target,name,descriptor){
+     if(isStringish(name)){ /* 装饰器模式下 */
+         target[Symbol("mobx-stored-annotations")][name] = { /* 向类的mobx-stored-annotations属性的name属性上，绑定 annotationType_ ， extend_ 等方法。 */
+            annotationType_: 'observable',  //这个标签证明是 observable，除了observable，还有 action， computed 等。
+            options_: null,
+            make_,  // 这个方法在类组件 makeObservable 会被激活
+            extend_ // 这个方法在类组件 makeObservable 会被激活
+        }
+     }       
+}
+```
+
+- 被 observable 装饰器包装的属性，本质上就是调用createObservable 方法。
+- 通过 createObservable 将类上绑定当前 observable 对应的配置项，给 observable 绑定的属性添加一些额外的状态，这些状态将在类实例化的时候 makeObservable 中被激活。
+
+
+
+**激活状态-makeObservable**
+
+```javascript
+function makeObservable (target){ // target 模块实例——this
+    const adm = new ObservableObjectAdministration(target) /* 创建一个管理者——这个管理者是最上层的管理者，管理模块下的observable属性 */
+    target[Symbol("mobx administration")] = adm  /* 将管理者 adm 和 class 实例建立起关联 */
+    startBatch()
+    try{
+        let annotations = target[Symbol("mobx-stored-annotations"] /* 上面第一步说到，获取状态 */
+        Reflect.ownKeys(annotations)  /* 得到每个状态名称 */
+        .forEach(key => adm.make_(key, annotations[key])) /* 对每个属性调用 */
+    }finally{
+        endBatch()
+    }
+}
+```
+
+在新版本 mobx 中，必须在类的 constructor 中调用makeObservable(this) 才能建立响应式。
+
+makeObservable 主要做的事有以下两点：
+
+- 创建一个管理者 ObservableAdministration ，管理者就是为了管理子代属性的 ObservableValue 。并和模块实例建立起关系。
+- 然后会遍历观察者状态下的每一个属性，将每个属性通过adm.make_处理，值得注意的是，**这个make_是管理者的，并不是属性状态的make_。**
+
+
+
+**观察者属性管理者-ObservableAdministration**
+
+```javascript
+class ObservableObjectAdministration{
+    constructor(target_,values_){
+        this.target_ = target_
+        this.values_ = new Map() //存放每一个属性的ObserverValue。
+    }
+    /* 调用 ObserverValue的 get —— 收集依赖  */
+    getObservablePropValue_(key){ 
+        return this.values_.get(key)!.get()
+    }
+    /* 调用 ObserverValue的 setNewValue_   */
+    setObservablePropValue_(key,newValue){
+        const observable = this.values_.get(key)
+        observable.setNewValue_(newValue) /* 设置新值 */
+    }
+    make_(key,annotation){ // annotation 为每个observable对应的配置项的内容，{ make_,extends }
+        const outcome = annotation.make_(this, key, descriptor, source)
+    }
+    /* 这个函数很重要，用于劫持对象上的get,set */
+    defineObservableProperty_(key,value){
+        try{
+            startBatch()
+            const descriptor = {
+                get(){      // 当我们引用对象下的属性，实际上触发的是 getObservablePropValue_
+                   this.getObservablePropValue_(key)
+                },
+                set(value){ // 当我们改变对象下的属性，实际上触发的是 setObservablePropValue_
+                   this.setObservablePropValue_(key,value)
+                }
+            }
+            Object.defineProperty(this.target_, key , descriptor)
+            const observable = new ObservableValue(value) // 创建一个 ObservableValue
+            this.values_.set(key, observable)             // 设置observable到value中
+        }finally{
+            endBatch()
+        }
+    }
+}
+```
+
+当 mobx 底层遍历观察者属性，然后调用 make_ 方法的时候，本质上调用的是如上 make_ 方法，会激活当前的 observable 属性，触发 observable 配置项上的 make_ 方法，然后就会进入真正的添加观察者属性环节 defineObservableProperty_ 。
+
+- 首先会通过 **Object.defineProperty** ，拦截对象的属性，添加get，set ，比如组件中引用对象上的属性，调用 get ——本质上调用 getObservablePropValue_ ，在 observableValues 调用的是 get 方法；当修改对象上的属性，调用 set ——本质上调用 setObservablePropValue_ ，setObservablePropValue_ 调用的是 ObservableValues 上的 setNewValue_ 方法。
+- 对于每一个属性会增加一个观察者 ObservableValue ，然后把当前 ObservableValue 放入管理者 ObservableAdministration 的 values_ 属性上。
+
+
+
+### 依赖收集
+
+**观察者-ObservableValue**
+
+在 Mobx 有一个核心的思想就是 Atom 主要是收集依赖，通知依赖。
+
+```javascript
+class Atom{
+    observers_ = new Set() /* 存放每个组件的 */
+    /* value改变，通知更新 */
+    reportChanged() {
+        startBatch()
+        propagateChanged(this)
+        endBatch()
+    }
+    /* 收集依赖 */
+    reportObserved() {
+        return reportObserved(this)
+    }
+}
+```
+
+ObservableValue 继承了 Atom。
+
+```javascript
+class ObservableValue extends Atom{
+    get(){ //adm.getObservablePropValue_ 被调用
+        this.reportObserved() // 调用Atom中 reportObserved
+        return this.dehanceValue(this.value_)
+    }
+    setNewValue_(newValue) { // adm.setObservablePropValue_
+        const oldValue = this.value_
+        this.value_ = newValue
+        this.reportChanged()  // 调用Atom中reportChanged
+    }
+}
+```
+
+
+
+**注入模块-Provider和inject**
+
+**Provider**
+
+```javascript
+const MobXProviderContext = React.createContext({})
+export function Provider(props) {
+    /* ... */
+    return <MobXProviderContext.Provider value={value}>{children}</MobXProviderContext.Provider>
+}
+```
+
+- mobx-react 中的 Provider非常简单，就是创建一个上下文 context ，并通过 context.Provider 传递上下文。
+
+
+
+**inject**
+
+```javascript
+function inject(...storeNames){
+   const Injector = React.forwardRef(((props, ref)=>{
+        let newProps = { ...props }
+        const context = React.useContext(MobXProviderContext)
+        storeNames.forEach(function(storeName){ //storeNames - [ 'Root' ]
+            if(storeName in newProps) return 
+            if(!(storeName in context)){
+                /* 将mobx状态从context中混入到props中。 */
+                newProps[storeName] = context[storeName]
+            }
+        })
+        return React.createElement(component, newProps)
+   }))
+   return Injector 
+}
+```
+
+- inject 作用很简单，就是将 mobx 的状态，从 context 中混入 props 中。
+
+useContext 接收一个 context 对象（React.createContext 的返回值）并返回该 context 的当前值。当前的 context 值由上层组件中距离当前组件最近的 <MyContext.Provider> 的 value prop 决定。
+
+
+
+**可观察组件-observer**
+
+被 observe 的组件，被赋予一项功能，就是可观察的，当里面引用了 mobx 中的 ObservableValue ，当 ObservableValue 改变，组件会更新。
+
+```javascript
+export function observer<T extends IReactComponent>(component: T): T {
+    // Function component
+    if (
+        typeof component === "function" &&
+        (!component.prototype || !component.prototype.render) &&
+        !component["isReactClass"] &&
+        !Object.prototype.isPrototypeOf.call(React.Component, component)
+    ) {
+        return observerLite(component as React.StatelessComponent<any>) as T
+    }
+
+    return function makeClassComponentObserver(){
+        const target = componentClass.prototype
+        const baseRender = target.render /* 这个是原来组件的render */
+        /* 劫持render函数 */
+        target.render = function () {
+            return makeComponentReactive.call(this, baseRender)
+        }
+    }
+}
+```
+
+**makeComponentReactive**
+
+```javascript
+function makeComponentReactive(){
+    const baseRender = render.bind(this) // baseRender为真正的render方法
+     /* 创建一个反应器，绑定类组件的更新函数 —— forceUpdate  */
+     const reaction = new Reaction(`${initialName}.render()`,()=>{
+          Component.prototype.forceUpdate.call(this) /* forceUpdate 为类组件更新函数 */
+     })
+    reaction["reactComponent"] = this    /* Reaction 和 组件实例建立起关联 */
+    reactiveRender["$mobx"] = reaction
+    this.render = reactiveRender 
+    function reactiveRender() { /* 改造的响应式render方法 */
+        reaction.track(() => {  // track中进行真正的依赖收集
+            try {
+                rendering = baseRender() /* 执行更新函数 */
+            } 
+        })
+        return rendering
+    }
+    return reactiveRender.call(this)
+}
+```
+
+makeComponentReactive 通过改造 render 函数，来实现依赖的收集，里面包含了很多核心流程。
+
+- 每一个组件会创建一个 Reaction，Reaction 的第二个参数内部封装了更新组件的方法。那么如果触发可观察属性的 set ，那么最后触发更新的就是这个方法，对于类组件本质上就是的 forceUpdate 方法。
+- 对 render 函数进行改造，改造成 reactiveRender ，在 reactiveRender 中，reaction.track 是真正的进行依赖的收集，track 回调函数中，执行真正的 render 方法，得到 element 对象 rendering 。
+
+
+
+
+
+
+
 ## 问与答
 
 + 问：老版本的 React 中，为什么写 jsx 的文件要默认引入 React?
