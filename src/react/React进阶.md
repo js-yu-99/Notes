@@ -3153,7 +3153,7 @@ export function observer<T extends IReactComponent>(component: T): T {
 **makeComponentReactive**
 
 ```javascript
-function makeComponentReactive(){
+function makeComponentReactive(render){
     const baseRender = render.bind(this) // baseRender为真正的render方法
      /* 创建一个反应器，绑定类组件的更新函数 —— forceUpdate  */
      const reaction = new Reaction(`${initialName}.render()`,()=>{
@@ -3178,6 +3178,135 @@ makeComponentReactive 通过改造 render 函数，来实现依赖的收集，�
 
 - 每一个组件会创建一个 Reaction，Reaction 的第二个参数内部封装了更新组件的方法。那么如果触发可观察属性的 set ，那么最后触发更新的就是这个方法，对于类组件本质上就是的 forceUpdate 方法。
 - 对 render 函数进行改造，改造成 reactiveRender ，在 reactiveRender 中，reaction.track 是真正的进行依赖的收集，track 回调函数中，执行真正的 render 方法，得到 element 对象 rendering 。
+
+
+
+**反应器-reaction**
+
+```javascript
+class Reaction{
+    constructor(name_,onInvalidate_){
+       this.name_ = name_
+       this.onInvalidate_ = onInvalidate_ /* onInvalidate_ 里面有组件的forceUpdate函数，用于更新组件 */
+    }
+    onBecomeStale_(){
+        this.schedule_() /* 触发调度更新 */
+    }
+    /* 开启调度更新 */
+    schedule_(){
+       if (!this.isScheduled_) {
+            this.isScheduled_ = true
+            globalState.pendingReactions.push(this)
+            runReactions()
+        }
+    }
+    /* 更新 */
+    runReaction_(){
+        startBatch()
+        this.isScheduled_ = false
+        const prev = globalState.trackingContext
+        globalState.trackingContext = this
+        this.onInvalidate_() /* 更新组件  */
+        globalState.trackingContext = prev
+        endBatch()
+    }
+    /* 收集依赖 */
+    track(fn){
+        startBatch()
+        /* 第一阶段 */
+        const prevTracking = globalState.trackingDerivation
+        globalState.trackingDerivation = this
+        /* 第二阶段 */
+        const result = fn.call(context)
+        globalState.trackingDerivation = prevTracking
+        /* 第三阶段 */
+        bindDependencies(this) 
+    }
+ }
+```
+
+**这个函数特别重要，是整个收集依赖核心。**
+
+- 第一阶段： 首先在执行 track 的时候，会把全局变量的 trackingDerivation，指向当前的 trackingDerivation 。这样在收集依赖的过程中，可以直接收集当前的 trackingDerivation ，也就是为什么 ObservableValue 能精确收集每一个 Reaction 。
+- 第二阶段：首先当被 observer 包装的组件，只要执行 render 函数，就会执行 track 方法，fn.call(context)，真正的r ender 函数会在里面执行，如果在 render 的过程中，引用了 mobx 可观察模块，首先会触发 track ，将当前Reaction 赋值给 trackingDerivation ，然后访问了 Root 下面的name 属性，那么首先会触发观察状态管理者的 adm 的 getObservablePropValue_ ，接下来会触发 name 属性的观察者 ObservableValue 下面的 get 方法，最后执行的是 reportObserved(this)。reportObserved 做的事情非常直接，就是将当前的 observable 放入 Reaction 的 newObserving_ 中，这样就把观察者属性（如上例子中的name）和组件对应的 Reaction 建立起关联。
+
+- 第三阶段： bindDependencies 主要做的事情如下：
+
+① 对于有**当前 Reaction**的 observableValue，observableValue会统一删除掉里面的 Reaction。
+② 会给这一次 render 中用到的新的依赖 observableValue ，统一添加当前的 Reaction 。
+③ 还会有一些细节，比如说在 render 中，引入两次相同的值（如上的 demo 中的 name ），会统一收集一次依赖。
+
+
+
+```javascript
+function reportObserved(observable){
+    /* 此时获取到当前函数对应的 Reaction。 */
+    const derivation = globalState.trackingDerivation 
+    /* 将当前的 observable 存放到 Reaction 的 newObserving_ 中。 */
+    derivation.newObserving_![derivation.unboundDepsCount_++] = observable 
+}
+
+function bindDependencies(Reaction){ /* 当前组件的 Reaction */
+    const prevObserving = derivation.observing_ /* 之前的observing_ */
+    const observing = (derivation.observing_ = derivation.newObserving_!) /* 新的observing_  */
+    let l = prevObserving.length
+    while (l--) { /* observableValue 删除之前的 Reaction  */
+        const observableValue = prevObserving[l]
+        observable.observers_.delete(Reaction)
+    }
+    let i0 = observing.length 
+    while (i0--) { /* 给renderhanobservableValue重新添加 Reaction  */
+        const observableValue = observing[i0]
+         observable.observers_.add(Reaction)
+    }
+}
+```
+
+
+
+### 派发更新
+
+- **第一步：** 首先对于观察者属性管理者 ObservableAdministration 会触发 setObservablePropValue_ ，然后找到对应的 ObservableValue 触发 setNewValue_ 方法。
+- **第二步：** setNewValue_ 本质上会触发Atom中的reportChanged ，然后调用 propagateChanged。调用 propagateChanged 触发，依赖于当前组件的所有 Reaction 会触发 onBecomeStale_ 方法。
+
+```javascript
+function propagateChanged(observable){
+    observable.observers_.forEach((Reaction)=>{
+        Reaction.onBecomeStale_()
+    })
+}
+```
+
+- **第三步：** Reaction 的 onBecomeStale_ 触发，会让Reaction 的 schedule_ 执行，注意一下这里 schedule_ 会开启更新调度。什么叫更新调度呢。就是 schedule_ 并不会马上执行组件更新，而是把当前的 Reaction 放入 globalState.pendingReactions（待更新 Reaction 队列）中，然后会执行 runReactions 外部方法。
+
+```javascript
+function runReactions(){
+    if (globalState.inBatch > 0 || globalState.isRunningReactions) return
+    globalState.isRunningReactions = true
+    const allReactions = globalState.pendingReactions
+    /* 这里的代码是经过修改过后的，源码中要比 */
+    allReactions.forEach(Reaction=>{
+         /* 执行每一个组件的更新函数 */
+         Reaction.runReaction_()
+    })
+    globalState.pendingReactions = []
+    globalState.isRunningReactions = false
+}
+```
+
+- **第四步：** 执行每一个 Reaction ，当一个 ObservableValue 的属性值改变，可以收集了多个组件的依赖，所以 mobx 用这个调度机制，先把每一个 Reaction 放入 pendingReactions 中，然后集中处理这些 Reaction ， Reaction 会触发 runReaction_()方法，会触发 onInvalidate_ ——类组件的 forceupdate 方法完成组件更新。
+
+
+
+## Mobx与Redux区别
+
+- 首先在 Mobx 在上手程度上，要优于 Redux ，比如 Redux 想使用异步，需要配合中间价，流程比较复杂。
+- Redux 对于数据流向更规范化，Mobx 中数据更加多样化，允许数据冗余。
+
+- Redux 整体数据流向简单，Mobx 依赖于 Proxy， Object.defineProperty 等，劫持属性 get ，set ，数据变化多样性。
+- Redux 可拓展性比较强，可以通过中间件自定义增强 dispatch 。
+
+- 在 Redux 中，基本有一个 store ，统一管理 store 下的状态，在 mobx 中可以有多个模块，可以理解每一个模块都是一个 store ，相互之间是独立的。
 
 
 
