@@ -3815,6 +3815,21 @@ function CustomRouter(props){
 
 一旦对路由进行自定义封装，就要考虑上面四种 Route 编写方式，如上写的自定义 Route 只支持 component 和 render 形式。
 
+
+
+# React-Redux
+
+### React-Redux,Redux,React三者关系
+
+- Redux： 首先 Redux 是一个应用状态管理js库，它本身和 React 是没有关系的，换句话说，Redux 可以应用于其他框架构建的前端应用，甚至也可以应用于 Vue 中。
+- React-Redux：React-Redux 是连接 React 应用和 Redux 状态管理的桥梁。React-redux 主要专注两件事，一是如何向 React 应用中注入 redux 中的 Store ，二是如何根据 Store 的改变，把消息派发给应用中需要状态的每一个组件。
+
+![img](https://cdn.nlark.com/yuque/0/2022/png/21510703/1643460816360-8d644bda-d31b-444e-9be9-0e68c3a9f0c5.png)
+
+
+
+
+
 ## 问与答
 
 + 问：老版本的 React 中，为什么写 jsx 的文件要默认引入 React?
