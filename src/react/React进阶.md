@@ -3828,6 +3828,152 @@ function CustomRouter(props){
 
 
 
+## Redux
+
+### 三大原则
+
+- 单向数据流：整个 redux ，数据流向都是单向的
+- state 只读：在 Redux 中不能通过直接改变 state ，来让状态发生变化，如果想要改变 state ，那就必须触发一次 action ，通过 action 执行每个 reducer 。
+
+- 纯函数执行：每一个 reducer 都是一个纯函数，里面不要执行任何副作用，返回的值作为新的 state ，state 改变会触发 store 中的 subscribe 。
+
+
+
+### 发布订阅思想
+
+redux 可以作为发布订阅模式的一个具体实现。redux 都会创建一个 store ，里面保存了状态信息，改变 store 的方法 dispatch ，以及订阅 store 变化的方法 subscribe 。
+
+
+
+### 中间件思想
+
+为了**强化 dispatch** ， Redux 提供了中间件机制，使用者可以根据需要来强化 dispatch 函数，传统的 dispatch 是不支持异步的，但是可以针对 Redux 做强化，于是有了 redux-thunk，redux-actions 等中间件，包括 dvajs 中，也写了一个 redux 支持 promise 的中间件。
+
+```javascript
+const compose = (...funcs) => {
+  return funcs.reduce((f, g) => (x) => f(g(x)));
+}
+```
+
+- funcs 为中间件组成的数组，compose 通过数组的 reduce 方法，实现执行每一个中间件，强化 dispatch 。
+
+
+
+### 核心API
+
+**createStore**
+
+redux中通过 createStore 可以创建一个 Store ，使用者可以将这个 Store 保存传递给 React 应用，具体怎么传递那就是 React-Redux 做的事了。
+
+```javascript
+const Store = createStore(rootReducer,initialState,middleware)
+```
+
+- 参数一 reducers ： redux 的 reducer ，如果有多个那么可以调用 combineReducers 合并。
+- 参数二 initialState ：初始化的 state 。
+
+- 参数三 middleware ：如果有中间件，那么存放 redux 中间件。
+
+
+
+**combineReducers**
+
+```javascript
+/* 将 number 和 PersonalInfo 两个reducer合并   */
+const rootReducer = combineReducers({ number:numberReducer,info:InfoReducer })
+```
+
+**applyMiddleware**
+
+```javascript
+const middleware = applyMiddleware(logMiddleware)
+```
+
+- applyMiddleware 用于注册中间价，支持多个参数，每一个参数都是一个中间件。每次触发 action ，中间件依次执行。
+
+### 基本用法
+
+```jsx
+// 编写reducer
+/* number Reducer */
+function numberReducer(state=1,action){
+  switch (action.type){
+    case 'ADD':
+      return state + 1
+    case 'DEL':
+      return state - 1
+    default:
+      return state
+  } 
+}
+/* 用户信息reducer */
+function InfoReducer(state={},action){
+  const { payload = {} } = action
+   switch (action.type){
+     case 'SET':
+       return {
+         ...state,
+         ...payload
+       }
+     default:
+       return state
+   }
+}
+
+// 注册中间件
+/* 打印中间件 */
+/* 第一层在 compose 中被执行 */
+function logMiddleware(){
+    /* 第二层在reduce中被执行 */ 
+    return (next) => {
+      /* 返回增强后的dispatch */
+      return (action)=>{
+        const { type } = action
+        console.log('发生一次action:', type )
+        return next(action)
+      }
+    }
+}
+
+// 生成store
+/* 注册中间件  */
+const rootMiddleware = applyMiddleware(logMiddleware)
+/* 注册reducer */
+const rootReducer = combineReducers({ number:numberReducer,info:InfoReducer  })
+/* 合成Store */
+const Store = createStore(rootReducer,{ number:1 , info:{ name:null } } ,rootMiddleware) 
+
+
+// 试用redux
+function Index(){
+  const [ state , changeState  ] = useState(Store.getState())
+  useEffect(()=>{
+    /* 订阅state */
+    const unSubscribe = Store.subscribe(()=>{
+         changeState(Store.getState())
+     })
+    /* 解除订阅 */
+     return () => unSubscribe()
+  },[])
+  return <div > 
+          <p>  { state.info.name ? `hello, my name is ${ state.info.name}` : 'what is your name' } ,
+           { state.info.mes ? state.info.mes  : ' what do you say? '  } </p>
+         React进阶 { state.number } 👍 <br/>
+        <button onClick={()=>{ Store.dispatch({ type:'ADD' })  }} >点赞</button>
+        <button onClick={()=>{ Store.dispatch({ type:'SET',payload:{ name:'alien' , mes:'let us learn React!'  } }) }} >修改标题</button>
+     </div>
+}
+```
+
+
+
+## React-Redux用法
+
+React-Redux 是沟通 React 和 Redux 的桥梁，它主要功能体现在如下两个方面：
+
+- 1 接受 Redux 的 Store，并把它合理分配到所需要的组件中。
+- 2 订阅 Store 中 state 的改变，促使消费对应的 state 的组件更新。
+
 
 
 ## 问与答
