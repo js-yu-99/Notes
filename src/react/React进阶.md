@@ -3819,12 +3819,16 @@ function CustomRouter(props){
 
 # React-Redux
 
-### React-Redux,Redux,React三者关系
+## React-Redux,Redux,React三者关系
 
 - Redux： 首先 Redux 是一个应用状态管理js库，它本身和 React 是没有关系的，换句话说，Redux 可以应用于其他框架构建的前端应用，甚至也可以应用于 Vue 中。
 - React-Redux：React-Redux 是连接 React 应用和 Redux 状态管理的桥梁。React-redux 主要专注两件事，一是如何向 React 应用中注入 redux 中的 Store ，二是如何根据 Store 的改变，把消息派发给应用中需要状态的每一个组件。
 
 ![img](https://cdn.nlark.com/yuque/0/2022/png/21510703/1643460816360-8d644bda-d31b-444e-9be9-0e68c3a9f0c5.png)
+
+
+
+![img](https://cdn.nlark.com/yuque/0/2022/png/21510703/1645769941298-ab1c420c-acdd-486b-8929-50ee0d61c8d6.png)
 
 
 
@@ -3836,6 +3840,18 @@ function CustomRouter(props){
 - state 只读：在 Redux 中不能通过直接改变 state ，来让状态发生变化，如果想要改变 state ，那就必须触发一次 action ，通过 action 执行每个 reducer 。
 
 - 纯函数执行：每一个 reducer 都是一个纯函数，里面不要执行任何副作用，返回的值作为新的 state ，state 改变会触发 store 中的 subscribe 。
+
+
+
+Redux的三个主要概念：State、Action、Reducer；
+
+State即Store，一般就是一个纯JavaScript Object；
+
+Action也是一个Object，用于描述发生的动作；
+
+而Reducer则是一个函数，接收Action和State并作为参数，通过计算返回新的Store；
+
+![img](https://cdn.nlark.com/yuque/0/2022/png/21510703/1645770123721-54a7852b-8fd6-47dd-ab2f-c2447a0ce3ab.png)
 
 
 
@@ -3894,74 +3910,94 @@ const middleware = applyMiddleware(logMiddleware)
 ### 基本用法
 
 ```jsx
-// 编写reducer
-/* number Reducer */
-function numberReducer(state=1,action){
-  switch (action.type){
-    case 'ADD':
-      return state + 1
-    case 'DEL':
-      return state - 1
-    default:
-      return state
-  } 
-}
-/* 用户信息reducer */
-function InfoReducer(state={},action){
-  const { payload = {} } = action
-   switch (action.type){
-     case 'SET':
-       return {
-         ...state,
-         ...payload
-       }
-     default:
-       return state
-   }
-}
+import { createStore } from 'redux';
+import React from 'react';
+import { Button } from 'antd';
+import { Provider, connect } from 'react-redux';
 
-// 注册中间件
-/* 打印中间件 */
-/* 第一层在 compose 中被执行 */
-function logMiddleware(){
-    /* 第二层在reduce中被执行 */ 
-    return (next) => {
-      /* 返回增强后的dispatch */
-      return (action)=>{
-        const { type } = action
-        console.log('发生一次action:', type )
-        return next(action)
-      }
+const initalValue = { value: 0 };
+
+function counterReducer(state = initalValue, action) {
+    switch (action.type) {
+        case 'incremented':
+            return {
+                value: state.value + 1
+            };
+        case 'decremented':
+            return {
+                value: state.value - 1
+            };
+        default:
+            return state;
     }
 }
 
-// 生成store
-/* 注册中间件  */
-const rootMiddleware = applyMiddleware(logMiddleware)
-/* 注册reducer */
-const rootReducer = combineReducers({ number:numberReducer,info:InfoReducer  })
-/* 合成Store */
-const Store = createStore(rootReducer,{ number:1 , info:{ name:null } } ,rootMiddleware) 
+const store = createStore(counterReducer);
+store.subscribe(() => {
+    console.log('store');
+});
 
+class Demo extends React.Component<any, any> {
+    public render(): React.ReactNode {
+        const { value } = this.props;
+        return (
+            <div>
+                { this.props.value }
+                1222
+            </div>
+        );
+    }
+}
 
-// 试用redux
-function Index(){
-  const [ state , changeState  ] = useState(Store.getState())
-  useEffect(()=>{
-    /* 订阅state */
-    const unSubscribe = Store.subscribe(()=>{
-         changeState(Store.getState())
-     })
-    /* 解除订阅 */
-     return () => unSubscribe()
-  },[])
-  return <div > 
-          <p>  { state.info.name ? `hello, my name is ${ state.info.name}` : 'what is your name' } ,
-           { state.info.mes ? state.info.mes  : ' what do you say? '  } </p>
-         React进阶 { state.number } 👍 <br/>
-        <button onClick={()=>{ Store.dispatch({ type:'ADD' })  }} >点赞</button>
-        <button onClick={()=>{ Store.dispatch({ type:'SET',payload:{ name:'alien' , mes:'let us learn React!'  } }) }} >修改标题</button>
-     </div>
+class Counter extends React.Component<any, any> {
+    public render() {
+        const { value1, onIncreaseClick } = this.props;
+        return (
+            <div>
+                <Button
+                    onClick={ () => {
+                        onIncreaseClick({type: 'incremented'});
+                    } }
+                >+1</Button>
+                <Button
+                    onClick={ () => {
+                        onIncreaseClick({type: 'decremented'});
+                    } }
+                >-1</Button>
+            </div>
+        );
+    }
+}
+
+function mapStateToProps(state) {
+    return {
+        value: state.value
+    };
+}
+
+function mapDispatchToProps(dispatch) {
+    return {
+        onIncreaseClick: (obj) => dispatch(obj)
+    };
+}
+
+const App = connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(Counter);
+
+const App2 = connect(mapStateToProps)(Demo);
+
+export class ReduxDemo1 extends React.Component<any, any> {
+    public render(): React.ReactNode {
+        return (
+            <Provider store={ store }>
+                <App />
+                <App2 />
+            </Provider>
+
+        );
+    }
 }
 ```
 
@@ -3973,6 +4009,372 @@ React-Redux 是沟通 React 和 Redux 的桥梁，它主要功能体现在如下
 
 - 1 接受 Redux 的 Store，并把它合理分配到所需要的组件中。
 - 2 订阅 Store 中 state 的改变，促使消费对应的 state 的组件更新。
+
+
+
+### 用法
+
+#### Provider
+
+由于 redux 数据层，可能被很多组件消费，所以 react-redux 中提供了一个 Provider 组件，可以全局注入 redux 中的 store ，所以使用者需要把 Provider 注册到根部组件中。Provider 作用就是保存 redux 中的 store ，分配给所有需要 state 的子孙组件。
+
+```jsx
+export class ReduxDemo1 extends React.Component<any, any> {
+    public render(): React.ReactNode {
+        return (
+            <Provider store={ store }>
+                <App />
+                <App2 />
+            </Provider>
+
+        );
+    }
+}
+```
+
+#### connect
+
+connect高阶组件包裹真正的组件，被包裹的组件可以：
+
+- 1 能够从 props 中获取改变 state 的方法 Store.dispatch 。
+- 2 如果 connect 有第一个参数，那么会将 redux state 中的数据，映射到当前组件的 props 中，子组件可以使用消费。
+
+- 3 当需要的 state ，有变化的时候，会通知当前组件更新，重新渲染视图。
+
+```jsx
+function connect(mapStateToProps?, mapDispatchToProps?, mergeProps?, options?)
+
+const App = connect(
+    mapStateToProps,
+    mapDispatchToProps
+)(Counter);
+```
+
+**①mapStateToProps**
+
+```jsx
+function mapStateToProps(state) {
+    return {
+        value: state.value
+    };
+} 
+```
+
+- 组件依赖 redux 的 state，映射到业务组件的 props 中，state 改变触发，业务组件 props 改变，触发业务组件更新视图。当这个参数没有的时候，当前组件不会订阅 store 的改变。
+
+
+
+**②mapDispatchToProps**
+
+```jsx
+function mapDispatchToProps(dispatch) {
+    return {
+        onIncreaseClick: (obj) => dispatch(obj)
+    };
+}
+```
+
+- 将 redux 中的 dispatch 方法，映射到业务组件的 props 中。比如上面代码中的onIncreaseClick方法映射到 props 。
+
+**③mergeProps**
+
+```jsx
+/* * stateProps , state 映射到 props 中的内容 * dispatchProps，
+dispatch 映射到 props 中的内容。 * ownProps 组件本身的 props */ 
+(stateProps, dispatchProps, ownProps) => Object 
+```
+
+正常情况下，如果没有这个参数，会按照如下方式进行合并，返回的对象可以是，可以自定义的合并规则，还可以附加一些属性。
+
+```jsx
+{ ...ownProps, ...stateProps, ...dispatchProps } 
+```
+
+**④options**
+
+```jsx
+{
+  context?: Object,   // 自定义上下文
+  pure?: boolean, // 默认为 true , 当为 true 的时候 ，除了 mapStateToProps 和 props ,其他输入或者state 改变，均不会更新组件。
+  areStatesEqual?: Function, // 当pure true , 比较引进store 中state值 是否和之前相等。 (next: Object, prev: Object) => boolean
+  areOwnPropsEqual?: Function, // 当pure true , 比较 props 值, 是否和之前相等。 (next: Object, prev: Object) => boolean
+  areStatePropsEqual?: Function, // 当pure true , 比较 mapStateToProps 后的值 是否和之前相等。  (next: Object, prev: Object) => boolean
+  areMergedPropsEqual?: Function, // 当 pure 为 true 时， 比较 经过 mergeProps 合并后的值 ， 是否与之前等  (next: Object, prev: Object) => boolean
+  forwardRef?: boolean, //当为true 时候,可以通过ref 获取被connect包裹的组件实例。
+}
+```
+
+如上标注了 options 属性每一个的含义。
+
+
+
+### 组件间通信Demo
+
+```jsx
+import { createStore } from 'redux';
+import React from 'react';
+import { Button, Input } from 'antd';
+import { Provider, connect } from 'react-redux';
+
+const initalValue = { compBsay: '', compAsay: '' };
+function counterReducer(state = initalValue, action) {
+    return {
+        compAsay: action.compAsay,
+        compBsay: action.compBsay,
+    };
+}
+
+const store = createStore(counterReducer);
+store.subscribe(() => {
+    console.log('store');
+});
+
+class CompA extends React.Component<any, any> {
+    constructor(pro) {
+        super(pro);
+        this.state = {
+            inputValue: ''
+        };
+    }
+    public render(): React.ReactNode {
+        return (
+            <div>
+                B对A说：{ this.props.compBsay }
+                <Input value={ this.state.inputValue } onChange={ (e) => {
+                    this.setState({
+                        inputValue: e.target.value
+                    });
+                } }/>
+                <Button onClick={ () => {
+                    this.props.onChange({
+                        type: 'a',
+                        compAsay: this.state.inputValue,
+                        compBsay: this.props.compBsay
+                    });
+                } }>提交</Button>
+            </div>
+        );
+    }
+}
+
+class CompB extends React.Component<any, any> {
+    constructor(pro) {
+        super(pro);
+        this.state = {
+            inputValue: ''
+        };
+    }
+    public render() {
+        return (
+            <div>
+                A对B说：{ this.props.compAsay }
+                <Input value={ this.state.inputValue } onChange={ (e) => {
+                    this.setState({
+                        inputValue: e.target.value
+                    });
+                } }/>
+                <Button onClick={ () => {
+                    this.props.dispatch({
+                        type: 'b',
+                        compBsay: this.state.inputValue,
+                        compAsay: this.props.compAsay
+                    });
+                } }>提交</Button>
+            </div>
+        );
+    }
+}
+
+function mapStateToPropsA(state) {
+    return {
+        compBsay: state.compBsay
+    };
+}
+function mapStateToPropsB(state) {
+    return {
+        compAsay: state.compAsay
+    };
+}
+function mapDispatchToProps(dispatch) {
+    return {
+        onChange: (obj) => {
+            dispatch(obj);
+        }
+    };
+}
+
+const App = connect(
+    mapStateToPropsA,
+    mapDispatchToProps
+)(CompA);
+
+const App2 = connect(mapStateToPropsB)(CompB);
+
+export class ReduxDemo2 extends React.Component<any, any> {
+    public render(): React.ReactNode {
+        return (
+            <Provider store={ store }>
+                <App />
+                <App2 />
+            </Provider>
+
+        );
+    }
+}
+```
+
+##  React-Redux原理
+
+### 第一部分： Provider注入Store
+
+```jsx
+// react-redux/src/components/Provider.js
+const ReactReduxContext =  React.createContext(null)
+function Provider({ store, context, children }) {
+   /* 利用useMemo，跟据store变化创建出一个contextValue 包含一个根元素订阅器和当前store  */ 
+  const contextValue = useMemo(() => {
+      /* 创建了一个根级 Subscription 订阅器 */
+    const subscription = new Subscription(store)
+    return {
+      store,
+      subscription
+    } /* store 改变创建新的contextValue */
+  }, [store])
+  useEffect(() => {
+    const { subscription } = contextValue
+    /* 触发trySubscribe方法执行，创建listens */
+    subscription.trySubscribe() // 发起订阅
+    return () => {
+      subscription.tryUnsubscribe()  // 卸载订阅
+    } 
+  }, [contextValue])  /*  contextValue state 改变出发新的 effect */
+  const Context = ReactReduxContext
+  return <Context.Provider value={contextValue}>{children}</Context.Provider>
+}
+```
+
+- 1 首先知道 React-Redux 是通过 context 上下文来保存传递 Store 的，但是上下文 value 保存的除了 Store 还有 subscription 。
+- 2 subscription 可以理解为订阅器，在 React-redux 中一方面用来订阅来自 state 变化，另一方面通知对应的组件更新。在 Provider 中的订阅器 subscription 为根订阅器，
+
+- 3 在 Provider 的 useEffect 中，进行真正的绑定订阅功能，其原理内部调用了store.subscribe ，只有根订阅器才会触发store.subscribe。
+
+
+
+### 第二部分： Subscription订阅器
+
+```jsx
+/* 发布订阅者模式 */
+export default class Subscription {
+  constructor(store, parentSub) {
+  //....
+  }
+  /* 负责检测是否该组件订阅，然后添加订阅者也就是listener */
+  addNestedSub(listener) {
+    this.trySubscribe()
+    return this.listeners.subscribe(listener)
+  }
+  /* 向listeners发布通知 */
+  notifyNestedSubs() {
+    this.listeners.notify()
+  }
+  /* 开启订阅模式 首先判断当前订阅器有没有父级订阅器 ， 如果有父级订阅器(就是父级Subscription)，把自己的handleChangeWrapper放入到监听者链表中 */
+  trySubscribe() {
+    /*
+    parentSub  即是provide value 里面的 Subscription 这里可以理解为 父级元素的 Subscription
+    */
+    if (!this.unsubscribe) {
+      this.unsubscribe = this.parentSub
+        ? this.parentSub.addNestedSub(this.handleChangeWrapper)
+        /* provider的Subscription是不存在parentSub，所以此时trySubscribe 就会调用 store.subscribe   */
+        : this.store.subscribe(this.handleChangeWrapper)
+      this.listeners = createListenerCollection()
+    }
+  }
+  /* 取消订阅 */
+  tryUnsubscribe() {
+     //....
+  }
+}
+```
+
+整个订阅器的核心：**层层订阅，上订下发**。
+
+**层层订阅**：React-Redux 采用了层层订阅的思想，上述内容讲到 Provider 里面有一个 Subscription ，每一个用 connect 包装的组件，内部也有一个 Subscription ，而且这些订阅器一层层建立起关联，Provider中的订阅器是最根部的订阅器，可以通过 trySubscribe 和 addNestedSub 方法可以看到。还有一个注意的点就是，如果父组件是一个 connect ，子孙组件也有 connect ，那么父子 connect 的 Subscription 也会建立起父子关系。
+
+**上订下发**：在调用 trySubscribe 的时候，能够看到订阅器会和上一级的订阅器通过 addNestedSub 建立起关联，当 store 中 state 发生改变，会触发 store.subscribe ，但是只会通知给 Provider 中的根Subscription，根 Subscription 也不会直接派发更新，而是会下发给子代订阅器（ connect 中的 Subscription ），再由子代订阅器，决定是否更新组件，层层下发。
+
+
+
+![img](https://cdn.nlark.com/yuque/0/2022/png/21510703/1645774603466-b68fddf5-acba-41c8-a553-e7babcb91a38.png)
+
+
+
+### 第三部分： connect控制更新
+
+```jsx
+function connect(mapStateToProps,mapDispatchToProps){
+    const Context = ReactReduxContext
+    /* WrappedComponent 为connect 包裹的组件本身  */   
+    return function wrapWithConnect(WrappedComponent){
+        function createChildSelector(store) {
+          /* 选择器  合并函数 mergeprops */
+          return selectorFactory(store.dispatch, { mapStateToProps,mapDispatchToProps })
+        }
+        /* 负责更新组件的容器 */
+        function ConnectFunction(props){
+          /* 获取 context内容 里面含有 redux中store 和父级subscription */
+          const contextValue = useContext(ContextToUse)
+          /* 创建子选择器,用于提取state中的状态和dispatch映射，合并到props中 */
+          const childPropsSelector = createChildSelector(contextValue.store)
+          const [subscription, notifyNestedSubs] = useMemo(() => {
+            /* 创建一个子代Subscription，并和父级subscription建立起关系 */
+            const subscription = new Subscription(
+              store,
+              didStoreComeFromProps ? null : contextValue.subscription // 父级subscription，通过这个和父级订阅器建立起关联。
+            )
+             return [subscription, subscription.notifyNestedSubs]
+            }, [store, didStoreComeFromProps, contextValue])
+            
+            /* 合成的真正的props */
+            const actualChildProps = childPropsSelector(store.getState(), wrapperProps)
+            const lastChildProps = useRef()
+            /* 更新函数 */
+            const [ forceUpdate, ] = useState(0)
+            useEffect(()=>{
+                const checkForUpdates =()=>{
+                   newChildProps = childPropsSelector()
+                  if (newChildProps === lastChildProps.current) { 
+                      /* 订阅的state没有发生变化，那么该组件不需要更新，通知子代订阅器 */
+                      notifyNestedSubs() 
+                  }else{
+                     /* 这个才是真正的触发组件更新的函数 */
+                     forceUpdate(state=>state+1)
+                     lastChildProps.current = newChildProps /* 保存上一次的props */
+                  }
+                }
+                subscription.onStateChange = checkForUpdates
+                //开启订阅者 ，当前是被connect 包转的情况 会把 当前的 checkForceUpdate 放在存入 父元素的addNestedSub中 ，一点点向上级传递 最后传到 provide 
+                subscription.trySubscribe()
+                /* 先检查一遍，反正初始化state就变了 */
+                checkForUpdates()
+            },[store, subscription, childPropsSelector])
+
+             /* 利用 Provider 特性逐层传递新的 subscription */
+            return  <ContextToUse.Provider value={{  ...contextValue, subscription}}>
+                 <WrappedComponent  {...actualChildProps}  />
+            </ContextToUse.Provider>  
+          }
+          /* memo 优化处理 */
+          const Connect = React.memo(ConnectFunction) 
+        return hoistStatics(Connect, WrappedComponent)  /* 继承静态属性 */
+    }
+}
+```
+
+- 1 connect 中有一个 selector 的概念，selector 有什么用？就是通过 mapStateToProps ，mapDispatchToProps ，把 redux 中 state 状态合并到 props 中，得到最新的 props 。
+- 2 每一个 connect 都会产生一个新的 Subscription ，和父级订阅器建立起关联，这样父级会触发子代的 Subscription 来实现逐层的状态派发。
+
+- 3 有一点很重要，就是 Subscription 通知的是 checkForUpdates 函数，checkForUpdates 会形成新的 props ，与之前缓存的 props 进行浅比较，如果不相等，那么说明 state 已经变化了，直接触发一个useReducer 来更新组件。
 
 
 
@@ -4016,4 +4418,11 @@ React-Redux 是沟通 React 和 Redux 的桥梁，它主要功能体现在如下
   1、解决了 props 需要每一层都手动添加 props 的缺陷。2、解决了改变 value ，组件全部重新渲染的缺陷。
 
   react-redux 就是通过 Provider 模式把 redux 中的 store 注入到组件中的。
+
+
+
+问：为什么 React-Redux 会采用 subscription 订阅器进行订阅，而不是直接采用 store.subscribe 呢 ？
+
+- 1 首先 state 的改变，Provider 是不能直接下发更新的，如果下发更新，那么这个更新是整个应用层级上的，还有一点，如果需要 state 的组件，做一些性能优化的策略，那么该更新的组件不会被更新，不该更新的组件反而会更新了。
+- 2 父 Subscription -> 子 Subscription 这种模式，可以逐层管理 connect 的状态派发，不会因为 state 的改变而导致更新的混乱。
 
