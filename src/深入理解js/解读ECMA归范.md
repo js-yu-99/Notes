@@ -249,7 +249,7 @@ console.log(b); // {n: 1, x: {n: 2}}  成员访问优先级比=赋值高
 ***创建函数***
 
 + 开辟一个堆内存空间，有一个16进制的地址
-+ 存储的内容：函数体中的代码当做字符串先存储起来。
++ 存储的内容：函数体中的代码当做字符串先存储起来；当做普通对象也会存一些键值对。
 + 创建函数时，声明了其作用域[[scope]] （创建函数所在的上下文）
 + 堆内存地址放在栈中，供函数名（变量）调用
 
@@ -262,7 +262,7 @@ console.log(b); // {n: 1, x: {n: 2}}  成员访问优先级比=赋值高
 + 形参赋值（形参是私有变量）
 + 变量提升
 + 代码执行
-+ 根据情况，决定当前形成的私有上下文是否会出站释放
++ 根据情况，决定当前形成的私有上下文是否会出栈释放
 + 函数再次执行，所有的操作重新走一遍，函数每一次执行没有直接关系
 
 ```js
@@ -423,6 +423,9 @@ var fn = function sum() {
 if (1 === 1) {
   function foo() {}
 }
+
+// arguments.callee 表示一个函数本身，但是在严格模式下会报错。
+// 匿名函数具名化是为了可以在自执行函数内调用其本身
 ```
 
 
@@ -438,7 +441,7 @@ const y = 10;
 y = 20; // Uncaught TypeError: Assignment to constant variable. （variable =》变量）
 ```
 
-### var VS let
+## var VS let
 
 + let不存在变量提升
 
@@ -517,5 +520,92 @@ let x = 10;
   }
   ```
 
-  
+
+
+
+# 变量提升练习题
+
+```js
+console.log(foo) // undefined
+{
+  console.log(foo); // foo
+  function foo() {}
+  foo = 1;
+  console.log(foo); // 1
+}
+console.log(foo); // foo
+
+/**
+在新版本浏览器中
+1、如果function出现在除函数、对象的大括号中，则在变量提升阶段，只声明不定义。（即在全局声明变量foo）
+2、如果除了函数、对象的大括号中，只要出现let/const/function 关键词，都会产生块级私有上下文，对var无效。
+3、function foo() {} 如果变量赋值时在全局和块级上下文中都出现过，那么就会导致一个特殊性
+	+ 把这段代码及以前的对foo的操作，都映射给全局一份
+	+ 但是之后的代码都只认为是操作块级上下文中的，和全局上下文没有关系
+*/
+
+/**
+两次function foo() {}
+每次都把上面对foo的操作映射给全局上下文一份
+*/
+
+console.log(foo) // undefined
+{
+  console.log(foo); // foo(2)
+  function foo() {1}
+  foo = 1;
+  console.log(foo); // 1
+  function foo() {2}
+  console.log(foo); // 1
+}
+console.log(foo); // 1
+
+console.log(foo) // undefined
+{
+  console.log(foo); // foo(2)
+  function foo() {1}
+  foo = 1;
+  console.log(foo); // 1
+  function foo() {2}
+  console.log(foo); // 1
+  foo = 2;
+  console.log(foo); // 2
+}
+console.log(foo); // 1
+```
+
+
+
+> 浏览器某机制：如果当前函数使用了ES6中的形参赋值默认值（不论是否生效），并且函数体内有基于let/const/var 声明的变量，则函数在执行的时候，除了形成一个私有的函数上下文，而且还会把函数体{} 当做一个私有的块级上下文，并且块级上下文的上级上下文是私有函数上下文。
+>
+> 如果函数体中声明的变量和形参变量一直，最开始的时候，会把形参变量的值，同步给同名的私有变量一份。
+
+```js
+var x = 1;
+function func(x, y = function foo() { x = 2 }) {
+  x = 3;
+  y();
+  console.log(x); // 2
+}
+func(5);
+console.log(x); // 1
+
+var x = 1;
+function func(x, y = function foo() { x = 2 }) {
+  var x = 3;
+  y();
+  console.log(x); // 3
+}
+func(5);
+console.log(x); // 1
+
+var x = 1;
+function func(x, y = function foo() { x = 2 }) {
+  var x;
+  y();
+  console.log(x); // 5
+}
+func(5);
+console.log(x); // 1
+```
 

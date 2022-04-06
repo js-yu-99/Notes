@@ -42,6 +42,7 @@ let obj = {
 fn(); // this -> window
 obj.fn(); // this -> obj
 
+(obj.fn)(); // this -> obj
 (10, obj.fn)(); // this -> window  括号表达式
 
 (function () {
