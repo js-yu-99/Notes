@@ -81,3 +81,34 @@ console.log(obj.x, x);
 */
 ```
 
+
+
+
+
+---------
+
+
+
+# 珠峰 - this
+
+## 关于this的几种情况
+
++ 给当前元素的某个事件行为绑定方法，方法中的this是当前元素本身「排除IE低版本」。
++ 方法执行，看方法前面是否有“点”，有“点”点前面是谁，this就是谁，没有“点”，this是window“「严格情况下是undefined」。
+  + 自执行函数中的this一般是window / undefined。
+  + 回调函数中的this一般是window / undefined。某些方法中会做一些特殊的处理。
+  + 括号表达式
+  + ...
++ 构造函数执行，构造函数体中的this是当前类的实例。
++ 箭头函数中没有this「类似的还有块级上下文」，所以无论怎么去修改，都没有作用。一定是其所在的上级上下文中的this
++ call / apply / bind 这三个方法可以用来强制改变函数中的this指向。
+
+
+
+### call
+
+```js
+fn.call(); // this -> window
+fn.call(null) // this -> window / null  (严格模式)
+```
+
