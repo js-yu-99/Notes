@@ -609,3 +609,148 @@ func(5);
 console.log(x); // 1
 ```
 
+
+
+# JS数据类型检测
+
++ typeof [value]
++ [实例] instanceof [构造函数]
++ [对象].constructor === [构造函数]
++ Object.prototype.toString.call([value])
+
+
+
+## typeof
+
+返回一个字符串，包含了对应的数据类型。
+
+```js
+typeof null // object
+typeof new Number(10) // object
+// typeof 不能细分对象
+// 非null的原始值 和  函数类型的检测很友好
+```
+
+>  原理：根据计算机底层存储值的二进制来计算。性能会好一些。
+
++ 对象类型监测不友好，基础类型除了null都可以快速检测。
++ 以“000” 开始的值都被认为是对象类型，而null的值是“000000”，所以被认为是对象。
++ Function 类型判断是否实现了call 方法，有就是function 类型
+
+
+
+## instanceof
+
+本意不是检测数据类型，而是检测当前实例是不是属于这个类。
+
+可以根据instanceof 细分对象类型。
+
+```js
+[] instanceof Array // true
+[] instanceof Object // true
+```
+
+> 原理：首先按照构造函数的Symbol.hasInstance([实例]) 方法进行检测，如果存在这个属性方法，则方法执行返回的值就是最后检测结果。如果不存在这个属性方法，则会查找当前实例的原型链（一直找到Object.prototype为止），如果查找中途，找到了某个原型等于构造函数的原型「构造函数出现在实例的原型链上」则返回结果为true，反之是false。
+
+
+
+缺陷：
+
++ 无法检测原始值类型（不会像隐式调用一样有“装箱”操作）
++ 如果原型重定向后此方法就无法正确找到原型
+
+```js
+10 instanceof Number // false
+
+function Fn() {}
+Fn.prototype = [];
+let f = new Fn();
+f instanceof Array // true
+```
+
+```js
+// es6 可以重写Symbol.hasInstance方法，es5不可以
+class Fn {
+  static [Symbol.hasInstance](value) {
+    return true;
+  }
+}
+1 instanceof Fn // true
+```
+
+```js
+function instance_of(obj, Ctor) {
+  // 数据格式校验
+  if (Ctor == null || Ctor == undefined) {
+    throw new TypeError('Right-hand side of "instanceof" is not an object');
+  };
+  if (!Ctor.prototype) {
+    throw new TypeError('Malformed arrow function parameter list');
+  }
+  if (typeof Ctor !== 'function') {
+    throw new TypeError('Right-hand side of "instanceof" is not callable');
+  }
+  
+  // 原始值类型忽略
+  if (obj == null) return false;
+  if (!/^(object|function)$/.test(typeof obj)) return false;
+  
+  // 检测是否有Ctor[Symbol.hasInstance]方法
+  if (typeof Ctor[Symbol.hasInstance] === 'function') {
+    return Ctor[Symbol.hasInstance](obj);
+  }
+  
+  // 走到最后按照原型链查找
+  let prototype = Object.getPrototypeOf(obj);
+  while(prototype) {
+    if (prototype === Ctor.prototype) return true;
+    prototype = Object.getPrototypeOf(prototype);
+  }
+  return false;
+}
+```
+
+
+
+## constructor
+
+本意：获取对象的构造函数，不是用来专门判断数据类型的。
+
+缺陷：constructor是可以被随意更改的，检测结果不一定准确
+
+好处：
+
++ 为true的值至多只有一个
++ 原始值调用时会进行“装箱”（除了 null  和 undefined）
+
+```js
+[].constructor === Array // true
+[].constructor === Object // false
+```
+
+
+
+## Object.prototype.toString.call()
+
+最为推荐的一种方案。
+
+> 原理：首先找到Object.prototype.toString方法，把toString执行之后，让方法中的this变为要检测的值，toString内部会返回对应this的数据类型信息。
+>
+> '[object Object]'
+
+大部分值所属类的原型上都有toString方法，除了Object.prototype.toString 是用来检测类型的，其余的一般都是用来检测字符串的。
+
+非普通对象.toString  一般先调取自己所属类原型上的toString。
+
+普通对象.toString 会直接调取Object.prototype.toString。
+
+```js
+({}).toString() // [object Object]
+Object.prototype.toString.call({}) // [object Object]
+(1).toString() // '1'
+```
+
+步骤：首先看[value] [Symbol.toStringTag]，如果存在这个属性，属性值是啥，返回的类型就是啥，如果没有这个属性，一般是返回所属的构造函数信息
+
+
+
