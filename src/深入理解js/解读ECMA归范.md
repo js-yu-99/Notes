@@ -754,3 +754,108 @@ Object.prototype.toString.call({}) // [object Object]
 
 
 
+## 数据检测实践
+
+```js
+var getProto = Object.getPrototypeOf;
+var toString = class2type.toString; // Object.prototype.toString
+var hasOwn = class2type.hasOwnProperty; // Object.prototype.hasOwnProperty
+var fnToString = hasOwn.toString; // Function.prototype.toString
+    // ObjectFunctionString = 'function Object() { [native code] }'
+var ObjectFunctionString = fnToString.call(Object); // Object.toString()
+
+var typeArr = ['Boolean', 'Number', 'String', 'Function', 'Array', 'Date','RegExp', 'Object', 'Error', 'Symbol', 'BigInt', 'Map', 'Set']; // ...
+typeArr.forEach(function (name) {
+  class2type["[object " + name + "]"] = name.toLowerCase();
+})
+
+function toType(obj) {
+  if (obj == null) {
+    return obj + "";
+  }
+
+  return typeof obj === "object" || typeof obj === "function" ?
+    class2type[toString.call(obj)] || "object" :
+  typeof obj;
+}
+
+function toType1(obj) {
+  if (obj == null) {
+    return obj + "";
+  }
+  if (typeof obj !== "object" || typeof obj !== "function" ) {
+    return typeof obj;
+  }
+  var reg = /^\[object ([0-9A-Za-z]+)\]$/, value = reg.exec(toString.call(obj))[1] || 'object';
+  return value.toLowerCase();
+}
+
+// 是否是一个函数
+var isFunction = function isFunction(obj) {
+  // JS中获取object元素，在某些浏览器中，基于typeof检测这个对象，返回的是function
+  return typeof obj === "function" && typeof obj.nodeType !== "number" &&
+    typeof obj.item !== "function";
+};
+
+// 是否是window对象
+var isWindow = function isWindow(obj) {
+  // undefined == null -> true
+  return obj != null && obj === obj.window;
+};
+
+
+// 检测是否为数组和类数组
+function isArrayLike(obj) {
+  var length = !!obj && "length" in obj && obj.length,
+      type = toType(obj);
+
+  if (isFunction(obj) || isWindow(obj)) {
+    return false;
+  }
+
+  return type === "array" || length === 0 ||
+    typeof length === "number" && length > 0 && (length - 1) in obj;
+}
+
+// 检测是否为存粹对象（直属类是Object，数组这类不是）
+function isPlainObject(obj) {
+  var proto, Ctor;
+
+  if (!obj || toType(obj) !== 'object') {
+    return false;
+  }
+
+  proto = getProto(obj);
+
+  // Objects with no prototype (e.g., `Object.create( null )`) are plain
+  if (!proto) {
+    return true;
+  }
+
+  // Objects with prototype are plain iff they were constructed by a global Object function
+  Ctor = hasOwn.call(proto, "constructor") && proto.constructor;
+  return typeof Ctor === "function" && fnToString.call(Ctor) === ObjectFunctionString;
+}
+
+// 检测是否是空对象
+function isEmptyObject(obj) {
+  if (obj == null) {
+    return false;
+  }
+  // Object.getOwnPropertyNames 可以获取不可枚举的key Object.keys 获取可枚举的key
+  var keys = Object.getOwnPropertyNames(obj);
+  if (typeof Symbol !== 'undefined') {
+    keys = keys.concat(Object.getOwnPropertySymbols(obj));
+  }
+  return keys.length === 0;
+}
+
+// 是否是数字
+function isNumeric(obj) {
+  var type = toType(obj);
+  return (type === "number" || type === "string") && !isNaN(obj - parseFloat(obj));
+};
+```
+
+
+
