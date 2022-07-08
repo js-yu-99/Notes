@@ -48,9 +48,66 @@ document.body.onClick = function () {}
 
 给当前元素的某个事件行为绑定方法，当事件行为触发，方法执行的时候，不仅会把方法执行，而且还会给方法默认传递一个实参，这个实参就是事件对象。
 
-是用来储存当前事件操作及触发的相关信息的，浏览器本身记录的，记录的是当前这次操作信息，和在哪个函数中无关。
+是用来储存当前事件操作及触发的相关信息的，浏览器本身记录的，记录的是当前这次操作信息，和在哪个函数中无关。（同一类事件类型的事件对象是同一个）
 
 + 鼠标事件对象 MouseEvent
   + clentX、clentY  鼠标触发点距离当前窗口左上角的x、y轴坐标
-  + pageX、pageY 
-+ 
+  + pageX、pageY  鼠标触发点距离body 左上角的x、y轴坐标
+  + type  事件类型
+  + target/srcElement 获取当前事件源（当前操作的元素）
+  + path 传播路径
+  + ev.perventDefault() / ev.returnValue = false 阻止默认行为
+  + ev.stopPropagation() / ev.cancelBubble = true 阻止冒泡传播
++ 键盘事件对象 KeyboardEvent
+  + Which / keyCode 获取按下的键盘码
+  + altKey  是否按下alt键（组合键）
+  + ctrlKey  是否按下alt键（组合键）
+  + shiftKey  是否按下alt键（组合键）
+  + key / code 存储键盘名字
++ TouchEvent  手指事件对象
+  + changedTouches / targetTouches / touches 都是用来记录手指信息的。
+  + changedTouches 手指按下、移动、离开屏幕  都存储了对应的信息，哪怕离开屏幕后，存储的也是最后一次手指在屏幕汇总的信息；获取的结果都是一个TouchList集合，记录每一根手指的信息；
+
+
+
+# 默认行为
+
++ 鼠标右键菜单
++ a标签跳转
++ 部分浏览器会记录输入内容
++ 键盘按下会输入内容
+
+
+
+禁用右键菜单
+
+```js
+window.oncontextmenu = function (ev) {
+	ev.preventDefault();
+}
+```
+
+
+
+# 事件传播
+
++ 阶段一：捕获阶段（CAPTURING_PHASE）
+  + 从最外层元素一直向里面逐级查找，直到找到事件源为止
+  + 目的是为了冒泡阶段的传播提供路径（event.path）
+  + window -> document -> html -> body -> ... -> 事件源
+
++ 阶段二：目标阶段（AT_TARGET）
+  + 触发事件源的相关事件行为
+
++ 阶段三：冒泡阶段（BUBBLING_PHASE）
+  + 按照捕获阶段收集的传播路径，不仅仅当前时间源的相关事件行为被触发，而且从内到外，其祖先所有元素的相关事件行为也都会被处罚
+
+
+
+addEventListener(事件，方法，false/true)
+
+最后一个参数默认是false：控制方法是在冒泡阶段触发执行的，如设置为true 可以控制在捕获阶段触发执行
+
+
+
+事件代理 可以提高60%左右的性能
